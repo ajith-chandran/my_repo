@@ -1,1 +1,2 @@
-
+curl -u YOUR_API_KEY: \
+"api/issues/search?componentKeys=32166com.att.itdp:OrderSelfServiceMs&types=BUG&tags=reliability&statuses=OPEN&ps=500"
