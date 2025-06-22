@@ -1,0 +1,64 @@
+public class AgentHelperTest extends AgentTest {
+
+    public void initAgentFlow() {
+        beforeClass_AgentTest();
+        beforeTest_AgentTest();
+    }
+
+    public String createBlackout() {
+        // Your blackout creation logic here
+        return "2025-07-10";  // return actual blackout date
+    }
+
+    public void cleanupAgentFlow() {
+        afterTest_AgentTest();
+    }
+}
+
+
+
+package tests.endtoend;
+
+import org.junit.Before;
+import org.junit.After;
+import org.junit.Test;
+import static org.junit.Assert.assertTrue;
+
+import pages.workflows.endtoend.agent.AgentHelperTest;
+import pages.workflows.endtoend.consumer.ConsumerHelperTest;
+
+public class EndToEndBlackoutTest {
+
+    private AgentHelperTest agentHelper;
+    private ConsumerHelperTest consumerHelper;
+    private String blackoutDate;
+
+    @Before
+    public void setup() {
+        agentHelper = new AgentHelperTest();
+        agentHelper.initAgentFlow(); // sets up browser, logs in
+    }
+
+    @Test
+    public void testEndToEndBlackoutFlow() {
+        // Agent creates blackout
+        blackoutDate = agentHelper.createBlackout();
+
+        // Clean up Agent (log out & quit driver)
+        agentHelper.cleanupAgentFlow();
+
+        // Now test Consumer side
+        consumerHelper = new ConsumerHelperTest();
+        consumerHelper.initConsumerFlow();
+
+        boolean isBlackoutVisible = consumerHelper.verifyBlackoutVisible(blackoutDate);
+        assertTrue("Blackout not visible to consumer", isBlackoutVisible);
+    }
+
+    @After
+    public void tearDown() {
+        if (consumerHelper != null) {
+            consumerHelper.cleanupConsumerFlow();
+        }
+    }
+}
