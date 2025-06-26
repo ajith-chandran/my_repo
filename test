@@ -1,64 +1,80 @@
-public class AgentHelperTest extends AgentTest {
+package helpers;
 
-    public void initAgentFlow() {
-        beforeClass_AgentTest();
-        beforeTest_AgentTest();
+import pages.workflows.common.CommonWorkflows;
+import pages.workflows.common.CancelBookingWorkflow;
+import tests.BaseTest;
+import enums.Environments;
+import tests.util.TagBuilder;
+import tests.util.Tags;
+
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * AgentHelper provides a clean, reusable way to initiate and work with
+ * agent test flows without relying on JUnit annotations or inheritance.
+ */
+public class AgentHelper {
+
+    private final Class<?> testClass;
+    private Method testMethod;
+    private final List<String> bookingNumbersToCancel = new ArrayList<>();
+
+    public AgentHelper(Class<?> testClass) {
+        this.testClass = testClass;
+        TagBuilder.addTags(Tags.agent, Tags.ui);
+        setTestAppContext();
     }
 
-    public String createBlackout() {
-        // Your blackout creation logic here
-        return "2025-07-10";  // return actual blackout date
+    public void setTestMethod(Method method) {
+        this.testMethod = method;
     }
 
-    public void cleanupAgentFlow() {
-        afterTest_AgentTest();
+    public void initStartPage() throws Exception {
+        loginAgent();
+
+        // Mark page init for tracking
+        BaseTest.pageHasBeenInitialized = true;
+
+        // Set session metadata in PROD
+        if (BaseTest.getEnvironment() == Environments.PROD) {
+            BaseTest.updateSessionGlobalSettings(null, testClass, testMethod);
+        }
+    }
+
+    public void loginAgent() {
+        CommonWorkflows.loginToAgent();
+    }
+
+    private void setTestAppContext() {
+        BaseTest.setTestApp("agent"); // marks app context for logs/test reporting
+    }
+
+    public void addBookingToCancel(String bookingNumber) {
+        bookingNumbersToCancel.add(bookingNumber);
+    }
+
+    public void cancelPendingBookings() {
+        if (!bookingNumbersToCancel.isEmpty()) {
+            CancelBookingWorkflow.cancelBookings(bookingNumbersToCancel, false);
+            bookingNumbersToCancel.clear();
+        }
     }
 }
 
 
 
-package tests.endtoend;
+@Test
+public void hybridFlowTest() throws Exception {
+    AgentHelper agentHelper = new AgentHelper(this.getClass());
+    agentHelper.setTestMethod(this.getClass().getMethod("hybridFlowTest"));
+    agentHelper.initStartPage();
 
-import org.junit.Before;
-import org.junit.After;
-import org.junit.Test;
-import static org.junit.Assert.assertTrue;
+    // do some agent-side booking
+    // agentHelper.addBookingToCancel(...); if needed later
 
-import pages.workflows.endtoend.agent.AgentHelperTest;
-import pages.workflows.endtoend.consumer.ConsumerHelperTest;
+    // later maybe: use ConsumerHelper too
 
-public class EndToEndBlackoutTest {
-
-    private AgentHelperTest agentHelper;
-    private ConsumerHelperTest consumerHelper;
-    private String blackoutDate;
-
-    @Before
-    public void setup() {
-        agentHelper = new AgentHelperTest();
-        agentHelper.initAgentFlow(); // sets up browser, logs in
-    }
-
-    @Test
-    public void testEndToEndBlackoutFlow() {
-        // Agent creates blackout
-        blackoutDate = agentHelper.createBlackout();
-
-        // Clean up Agent (log out & quit driver)
-        agentHelper.cleanupAgentFlow();
-
-        // Now test Consumer side
-        consumerHelper = new ConsumerHelperTest();
-        consumerHelper.initConsumerFlow();
-
-        boolean isBlackoutVisible = consumerHelper.verifyBlackoutVisible(blackoutDate);
-        assertTrue("Blackout not visible to consumer", isBlackoutVisible);
-    }
-
-    @After
-    public void tearDown() {
-        if (consumerHelper != null) {
-            consumerHelper.cleanupConsumerFlow();
-        }
-    }
+    agentHelper.cancelPendingBookings(); // cleanup if required
 }
