@@ -1,53 +1,16 @@
 /**
- * End-to-end test logic for handling blackout operations on the Agent side.
+ * Initializes the start page for Consumer UI tests.
  * <p>
- * This test class covers:
- * - Adding blackout dates for all hotels through the allotment calendar.
- * - Refreshing cache after blackout is added.
- * - Removing blackout entries from the calendar.
- * </p>
- * 
- * It relies on {@link AgentEndToEndBase} for agent setup, driver initialization,
- * and tag setup.
- */
-
-/**
- * Adds a blackout for all hotels and clears the cache from the cache manager.
- * 
- * <p>This method:
+ * This method performs the following actions:
  * <ul>
- *   <li>Initializes and loads the agent flow.</li>
- *   <li>Navigates to the allotment calendar.</li>
- *   <li>Adds a blackout date through the calendar UI.</li>
- *   <li>Refreshes the cache to reflect the update.</li>
+ *   <li>Loads the consumer homepage</li>
+ *   <li>Adds the {@code page_consumerHome} tag if {@code @ReuseBrowser} annotation is present</li>
+ *   <li>Resolves the currently executing test method using reflection</li>
+ *   <li>Initializes the test domain and sets browser state as initialized</li>
+ *   <li>Waits for CT object to be available in the browser window context</li>
+ *   <li>Sets a pseudo session ID for client tracking</li>
+ *   <li>Updates global session settings if not in PROD environment</li>
  * </ul>
  * 
- * @return {@code true} upon successful blackout addition and cache refresh.
- */
-
-/**
- * Removes previously added blackout entry from the allotment calendar.
- * 
- * <p>This method:
- * <ul>
- *   <li>Initializes the agent flow.</li>
- *   <li>Navigates to the allotment calendar.</li>
- *   <li>Deletes blackout entry through the calendar UI.</li>
- * </ul>
- * 
- * @return {@code true} upon successful blackout removal.
- */
-
-/**
- * Hook to stop the agent session after test is completed.
- * 
- * <p>This method is mapped to the post-test lifecycle using the
- * {@code afterTestAgentHelperTest()} from the base class.</p>
- */
-
-/**
- * Static utility to cleanly shutdown the agent and close the browser instance.
- * 
- * <p>This ensures any held resources by the agent browser are released properly
- * after the test session ends.</p>
+ * @throws RuntimeException if the test method name cannot be resolved using reflection
  */
