@@ -1,4 +1,27 @@
 /**
+ * Abstract base class for executing end-to-end agent-side UI tests.
+ *
+ * <p>This class extends {@code AgentTest} and encapsulates agent-specific test
+ * lifecycle behavior, including browser setup, login, metadata tagging, and teardown.
+ * It is designed to be used by agent helper classes in cross-system (e.g., agent-consumer)
+ * end-to-end test workflows, allowing shared setup across multiple test contexts.</p>
+ *
+ * <p>Main features:</p>
+ * <ul>
+ *   <li>Initializes browser and agent home page</li>
+ *   <li>Manages test metadata such as tags and environment</li>
+ *   <li>Performs before/after lifecycle setup with {@code @BeforeClass}, {@code @Before}, and {@code @AfterClass} hooks</li>
+ *   <li>Integrates with Costco Travel's internal tagging and environment handling system</li>
+ * </ul>
+ *
+ * <p>This class should not be instantiated directly in tests.
+ * Instead, it is intended to be extended by agent helper classes in cross-application flows.</p>
+ *
+ * @author [Your Name]
+ * @since [Sprint Name or Date]
+ */
+
+/**
  * Initializes the agent test class and sets the current method name.
  * Adds relevant tags, sets up the logger, and starts the agent page.
  *
