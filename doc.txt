@@ -1,81 +1,53 @@
 /**
- * Abstract base class for executing end-to-end agent-side UI tests.
- *
- * <p>This class extends {@code AgentTest} and encapsulates agent-specific test
- * lifecycle behavior, including browser setup, login, metadata tagging, and teardown.
- * It is designed to be used by agent helper classes in cross-system (e.g., agent-consumer)
- * end-to-end test workflows, allowing shared setup across multiple test contexts.</p>
- *
- * <p>Main features:</p>
+ * End-to-end test logic for handling blackout operations on the Agent side.
+ * <p>
+ * This test class covers:
+ * - Adding blackout dates for all hotels through the allotment calendar.
+ * - Refreshing cache after blackout is added.
+ * - Removing blackout entries from the calendar.
+ * </p>
+ * 
+ * It relies on {@link AgentEndToEndBase} for agent setup, driver initialization,
+ * and tag setup.
+ */
+
+/**
+ * Adds a blackout for all hotels and clears the cache from the cache manager.
+ * 
+ * <p>This method:
  * <ul>
- *   <li>Initializes browser and agent home page</li>
- *   <li>Manages test metadata such as tags and environment</li>
- *   <li>Performs before/after lifecycle setup with {@code @BeforeClass}, {@code @Before}, and {@code @AfterClass} hooks</li>
- *   <li>Integrates with Costco Travel's internal tagging and environment handling system</li>
+ *   <li>Initializes and loads the agent flow.</li>
+ *   <li>Navigates to the allotment calendar.</li>
+ *   <li>Adds a blackout date through the calendar UI.</li>
+ *   <li>Refreshes the cache to reflect the update.</li>
  * </ul>
- *
- * <p>This class should not be instantiated directly in tests.
- * Instead, it is intended to be extended by agent helper classes in cross-application flows.</p>
- *
- * @author [Your Name]
- * @since [Sprint Name or Date]
+ * 
+ * @return {@code true} upon successful blackout addition and cache refresh.
  */
 
 /**
- * Initializes the agent test class and sets the current method name.
- * Adds relevant tags, sets up the logger, and starts the agent page.
- *
- * @param className   The class representing the agent test.
- * @param methodName  The name of the test method being executed.
+ * Removes previously added blackout entry from the allotment calendar.
+ * 
+ * <p>This method:
+ * <ul>
+ *   <li>Initializes the agent flow.</li>
+ *   <li>Navigates to the allotment calendar.</li>
+ *   <li>Deletes blackout entry through the calendar UI.</li>
+ * </ul>
+ * 
+ * @return {@code true} upon successful blackout removal.
  */
 
 /**
- * Performs static initialization for the agent test class.
- * Sets up logging, class metadata, and initializes static flags.
- *
- * @param testClass The agent test class to initialize.
+ * Hook to stop the agent session after test is completed.
+ * 
+ * <p>This method is mapped to the post-test lifecycle using the
+ * {@code afterTestAgentHelperTest()} from the base class.</p>
  */
 
 /**
- * Orchestrates the complete initialization of the agent browser test flow.
- * Opens a new browser instance, sets the driver type, 
- * and prepares class-level test metadata.
- */
-
-/**
- * Lifecycle hook to initialize metadata and logging for agent helper test classes before any tests run.
- * Sets up tags, logging configuration, and test metadata.
- *
- * @param testClass The helper test class extending the agent base test.
- */
-
-/**
- * Sets up and launches the agent environment before each test method in a helper test class.
- * Initializes the browser and lands on the start page if required.
- *
- * @throws AnnotationConfigurationException if annotation parsing fails.
- * @throws SecurityException if access to the method is denied.
- */
-
-/**
- * Initializes the agent start page after logging in.
- * This sets the environment, executes login, and updates test-level settings 
- * like data environment and test metadata for accurate execution tracking.
- *
- * @throws SecurityException if access to test method metadata is restricted.
- */
-
-/**
- * Sets the flag indicating that the agent start page and browser initialization have been completed.
- * Prevents redundant initialization across tests in the same class.
- */
-
-/**
- * Executes cleanup after each test method in the agent helper test class.
- * Stops the driver if a unique browser session was used.
- */
-
-/**
- * Executes final cleanup after all test methods in the agent helper test class are run.
- * Wraps and delegates to the base test’s @AfterClass lifecycle for post-test teardown.
+ * Static utility to cleanly shutdown the agent and close the browser instance.
+ * 
+ * <p>This ensures any held resources by the agent browser are released properly
+ * after the test session ends.</p>
  */
