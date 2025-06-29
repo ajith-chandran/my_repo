@@ -1,41 +1,58 @@
-import requests
-import csv
+/**
+ * Initializes the agent test class and sets the current method name.
+ * Adds relevant tags, sets up the logger, and starts the agent page.
+ *
+ * @param className   The class representing the agent test.
+ * @param methodName  The name of the test method being executed.
+ */
 
-# --- CONFIG ---
-API_TOKEN = "your_token"
-PROJECT_KEY = "ServiceMs"
-SONAR_URL = "https://url.com"
-# --------------
+/**
+ * Performs static initialization for the agent test class.
+ * Sets up logging, class metadata, and initializes static flags.
+ *
+ * @param testClass The agent test class to initialize.
+ */
 
-params = {
-    "componentKeys": PROJECT_KEY,
-    "types": "BUG",
-    "statuses": "OPEN",
-    "ps": 500  # Increase as needed
-}
-auth = (API_TOKEN, "")
+/**
+ * Orchestrates the complete initialization of the agent browser test flow.
+ * Opens a new browser instance, sets the driver type, 
+ * and prepares class-level test metadata.
+ */
 
-response = requests.get(f"{SONAR_URL}/api/issues/search", params=params, auth=auth)
-data = response.json().get("issues", [])
+/**
+ * Lifecycle hook to initialize metadata and logging for agent helper test classes before any tests run.
+ * Sets up tags, logging configuration, and test metadata.
+ *
+ * @param testClass The helper test class extending the agent base test.
+ */
 
-# Filter only reliability bugs
-reliability_issues = []
-for issue in data:
-    impacts = issue.get("impacts", [])
-    if any(impact.get("softwareQuality") == "RELIABILITY" for impact in impacts):
-        reliability_issues.append(issue)
+/**
+ * Sets up and launches the agent environment before each test method in a helper test class.
+ * Initializes the browser and lands on the start page if required.
+ *
+ * @throws AnnotationConfigurationException if annotation parsing fails.
+ * @throws SecurityException if access to the method is denied.
+ */
 
-# Export to CSV
-with open("reliability_issues.csv", "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["Key", "Message", "Severity", "Component", "Line", "Rule"])
-    for issue in reliability_issues:
-        writer.writerow([
-            issue.get("key"),
-            issue.get("message"),
-            issue.get("severity"),
-            issue.get("component"),
-            issue.get("line"),
-            issue.get("rule")
-        ])
+/**
+ * Initializes the agent start page after logging in.
+ * This sets the environment, executes login, and updates test-level settings 
+ * like data environment and test metadata for accurate execution tracking.
+ *
+ * @throws SecurityException if access to test method metadata is restricted.
+ */
 
+/**
+ * Sets the flag indicating that the agent start page and browser initialization have been completed.
+ * Prevents redundant initialization across tests in the same class.
+ */
+
+/**
+ * Executes cleanup after each test method in the agent helper test class.
+ * Stops the driver if a unique browser session was used.
+ */
+
+/**
+ * Executes final cleanup after all test methods in the agent helper test class are run.
+ * Wraps and delegates to the base test’s @AfterClass lifecycle for post-test teardown.
+ */
