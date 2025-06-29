@@ -1,18 +1,43 @@
 /**
- * Utility class for end-to-end test helpers.
+ * End-to-end test class for verifying blackout date enforcement on the consumer side.
  * <p>
- * Provides shared static methods that support dynamic test behaviors 
- * such as resolving the name of the currently executing test method at runtime.
- * This is commonly used to reflect method-specific test setup or logging.
+ * This class validates that blackout dates created by the agent are properly 
+ * propagated to the consumer interface and that hotels are not visible for search
+ * on blackout dates. It builds on top of {@code ConsumerEndToEndBase} to ensure
+ * all necessary test environment setups, browser initialization, and teardown logic
+ * are respected.
+ * 
+ * <p>
+ * Tags:
+ * <ul>
+ *     <li>{@code android}, {@code ios}, {@code ca}</li>
+ *     <li>{@code page_consumerHome}</li>
+ *     <li>{@code portfolio_offeringsAndEngagement}, {@code regression}, {@code ui}</li>
+ * </ul>
  */
 
+    /**
+     * Verifies that the blackout date set on the agent calendar is enforced 
+     * on the consumer side.
+     * <p>
+     * The method initializes the test context, navigates to the consumer home page,
+     * and confirms that hotels are not listed for a known blackout date.
+     *
+     * @return {@code true} if the blackout date is correctly enforced on the consumer UI.
+     */
+    
 
     /**
-     * Retrieves the name of the currently executing method from the call stack.
+     * Cleans up consumer-side test session by performing test-specific teardown logic.
      * <p>
-     * This method inspects the current thread's stack trace and returns the method
-     * name that invoked this utility (two levels up the call stack).
-     * 
-     * @return the name of the method calling this utility
+     * This may include closing browser instances, logging out of sessions, 
+     * and resetting the environment after the individual test execution.
+     */
+    
+
+    /**
+     * Performs static cleanup for all consumer-side test classes.
+     * <p>
+     * Should be called when all tests that share the same consumer helper class are complete.
      */
     
