@@ -1,16 +1,18 @@
 /**
- * Initializes the start page for Consumer UI tests.
+ * Utility class for end-to-end test helpers.
  * <p>
- * This method performs the following actions:
- * <ul>
- *   <li>Loads the consumer homepage</li>
- *   <li>Adds the {@code page_consumerHome} tag if {@code @ReuseBrowser} annotation is present</li>
- *   <li>Resolves the currently executing test method using reflection</li>
- *   <li>Initializes the test domain and sets browser state as initialized</li>
- *   <li>Waits for CT object to be available in the browser window context</li>
- *   <li>Sets a pseudo session ID for client tracking</li>
- *   <li>Updates global session settings if not in PROD environment</li>
- * </ul>
- * 
- * @throws RuntimeException if the test method name cannot be resolved using reflection
+ * Provides shared static methods that support dynamic test behaviors 
+ * such as resolving the name of the currently executing test method at runtime.
+ * This is commonly used to reflect method-specific test setup or logging.
  */
+
+
+    /**
+     * Retrieves the name of the currently executing method from the call stack.
+     * <p>
+     * This method inspects the current thread's stack trace and returns the method
+     * name that invoked this utility (two levels up the call stack).
+     * 
+     * @return the name of the method calling this utility
+     */
+    
