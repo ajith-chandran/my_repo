@@ -1,56 +1,42 @@
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 public class WirelessAmendOrderCommandHelper {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @SuppressWarnings("unchecked")
     public Map<String, List<String>> extractProductIdsGroupedByStatus(SuccessActions promotionsAction) {
         try {
-            String jsonString = (String) promotionsAction.getData();  // JSON string, not a Map
-            JsonNode root = objectMapper.readTree(jsonString);
+            // Parse the JSON string returned from getData()
+            JsonNode data = objectMapper.readTree((String) promotionsAction.getData());
 
-            JsonNode immediatePromotions = root
+            // Navigate to immediatePromotion
+            JsonNode immediatePromotions = data
                     .path("promotions")
                     .path("promotionQualification")
                     .path("immediatePromotion");
 
+            // Check it's an array
             if (!immediatePromotions.isArray()) {
                 return Collections.emptyMap();
             }
 
-            // Now group by "status", mapping to a list of "id"s
-            return new IterableSupport(immediatePromotions).stream()
-                    .filter(p -> p.hasNonNull("status") && p.hasNonNull("id"))
+            // Process and group by status
+            return StreamSupport.stream(immediatePromotions.spliterator(), false)
+                    .filter(promo -> promo.hasNonNull("id") && promo.hasNonNull("status"))
                     .collect(Collectors.groupingBy(
-                            p -> p.get("status").asText(),
-                            Collectors.mapping(p -> p.get("id").asText(), Collectors.toList())
+                            promo -> promo.get("status").asText(),
+                            Collectors.mapping(promo -> promo.get("id").asText(), Collectors.toList())
                     ));
 
         } catch (Exception e) {
-            e.printStackTrace();  // or use a logger
+            // Log or rethrow as needed
+            e.printStackTrace();
             return Collections.emptyMap();
-        }
-    }
-
-    // Utility wrapper to stream over JsonNode arrays in Java 8
-    private static class IterableSupport implements Iterable<JsonNode> {
-        private final JsonNode node;
-
-        public IterableSupport(JsonNode node) {
-            this.node = node;
-        }
-
-        @Override
-        public Iterator<JsonNode> iterator() {
-            return node.iterator();
-        }
-
-        public Stream<JsonNode> stream() {
-            return StreamSupport.stream(spliterator(), false);
         }
     }
 }
