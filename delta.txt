@@ -1,42 +1,31 @@
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+public boolean areAllPromotionsValid(
+        Map<String, List<String>> groupedProductIds,
+        ActionServiceRequest actionServiceRequest) {
 
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
+    // Defensive null check
+    if (actionServiceRequest == null ||
+        actionServiceRequest.getProductOrder() == null ||
+        actionServiceRequest.getProductOrder().getImmediatePromotion() == null) {
+        return false;
+    }
 
-public class WirelessAmendOrderCommandHelper {
+    List<Map<String, Object>> promotions = actionServiceRequest.getProductOrder().getImmediatePromotion();
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    for (Map<String, Object> promo : promotions) {
+        if (promo == null) continue;
 
-    public Map<String, List<String>> extractProductIdsGroupedByStatus(SuccessActions promotionsAction) {
-        try {
-            // Parse the JSON string returned from getData()
-            JsonNode data = objectMapper.readTree((String) promotionsAction.getData());
+        String status = (String) promo.get("status");
+        String id = (String) promo.get("id");
 
-            // Navigate to immediatePromotion
-            JsonNode immediatePromotions = data
-                    .path("promotions")
-                    .path("promotionQualification")
-                    .path("immediatePromotion");
+        if (status == null || id == null) {
+            return false; // Missing status or id
+        }
 
-            // Check it's an array
-            if (!immediatePromotions.isArray()) {
-                return Collections.emptyMap();
-            }
-
-            // Process and group by status
-            return StreamSupport.stream(immediatePromotions.spliterator(), false)
-                    .filter(promo -> promo.hasNonNull("id") && promo.hasNonNull("status"))
-                    .collect(Collectors.groupingBy(
-                            promo -> promo.get("status").asText(),
-                            Collectors.mapping(promo -> promo.get("id").asText(), Collectors.toList())
-                    ));
-
-        } catch (Exception e) {
-            // Log or rethrow as needed
-            e.printStackTrace();
-            return Collections.emptyMap();
+        List<String> validIdsForStatus = groupedProductIds.get(status);
+        if (validIdsForStatus == null || !validIdsForStatus.contains(id)) {
+            return false; // Status not found, or ID not in corresponding list
         }
     }
+
+    return true; // All entries are valid
 }
