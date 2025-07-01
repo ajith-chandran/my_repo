@@ -1,39 +1,56 @@
-public Map<String, List<String>> extractProductIdsGroupedByStatus(SuccessActions promotionsAction) {
-    Map<String, Object> promotionNode = (Map<String, Object>) promotionsAction.getData();
-    
-    if (promotionNode == null || !promotionNode.containsKey("promotions")) {
-        return Collections.emptyMap();
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class WirelessAmendOrderCommandHelper {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @SuppressWarnings("unchecked")
+    public Map<String, List<String>> extractProductIdsGroupedByStatus(SuccessActions promotionsAction) {
+        try {
+            String jsonString = (String) promotionsAction.getData();  // JSON string, not a Map
+            JsonNode root = objectMapper.readTree(jsonString);
+
+            JsonNode immediatePromotions = root
+                    .path("promotions")
+                    .path("promotionQualification")
+                    .path("immediatePromotion");
+
+            if (!immediatePromotions.isArray()) {
+                return Collections.emptyMap();
+            }
+
+            // Now group by "status", mapping to a list of "id"s
+            return new IterableSupport(immediatePromotions).stream()
+                    .filter(p -> p.hasNonNull("status") && p.hasNonNull("id"))
+                    .collect(Collectors.groupingBy(
+                            p -> p.get("status").asText(),
+                            Collectors.mapping(p -> p.get("id").asText(), Collectors.toList())
+                    ));
+
+        } catch (Exception e) {
+            e.printStackTrace();  // or use a logger
+            return Collections.emptyMap();
+        }
     }
 
-    Object promotionsObj = promotionNode.get("promotions");
-    if (!(promotionsObj instanceof Map)) {
-        return Collections.emptyMap();
+    // Utility wrapper to stream over JsonNode arrays in Java 8
+    private static class IterableSupport implements Iterable<JsonNode> {
+        private final JsonNode node;
+
+        public IterableSupport(JsonNode node) {
+            this.node = node;
+        }
+
+        @Override
+        public Iterator<JsonNode> iterator() {
+            return node.iterator();
+        }
+
+        public Stream<JsonNode> stream() {
+            return StreamSupport.stream(spliterator(), false);
+        }
     }
-
-    Map<String, Object> promotions = (Map<String, Object>) promotionsObj;
-
-    if (!promotions.containsKey("promotionQualification")) {
-        return Collections.emptyMap();
-    }
-
-    Object promoQualObj = promotions.get("promotionQualification");
-    if (!(promoQualObj instanceof Map)) {
-        return Collections.emptyMap();
-    }
-
-    Map<String, Object> promotionQualification = (Map<String, Object>) promoQualObj;
-
-    Object immediatePromotionsObj = promotionQualification.get("immediatePromotion");
-    if (!(immediatePromotionsObj instanceof List)) {
-        return Collections.emptyMap();
-    }
-
-    List<Map<String, Object>> immediatePromotions = (List<Map<String, Object>>) immediatePromotionsObj;
-
-    return immediatePromotions.stream()
-        .filter(Objects::nonNull)
-        .collect(Collectors.groupingBy(
-            p -> (String) p.get("status"),
-            Collectors.mapping(p -> (String) p.get("id"), Collectors.toList())
-        ));
 }
