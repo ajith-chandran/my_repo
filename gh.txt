@@ -29,7 +29,7 @@ def main():
     pr_url = sys.argv[1]
     commit_msg = sys.argv[2]
 
-    # Load environment variables
+    # Load .env
     load_dotenv()
     github_token = os.getenv("GITHUB_TOKEN")
     github_username = os.getenv("GITHUB_USERNAME")
@@ -40,21 +40,18 @@ def main():
 
     try:
         owner, repo_name, pr_number = parse_pr_url(pr_url)
-        print(f"🔍 Parsed PR URL: owner={owner}, repo={repo_name}, pr_number={pr_number}")
     except ValueError as e:
         print(f"❌ {e}")
         sys.exit(1)
 
     full_repo_name = f"{owner}/{repo_name}"
-
-    # Create working directory with timestamp
     working_root, timestamp = create_timestamped_directory()
     print(f"🗂️  Working directory created: {working_root}")
 
     repo_dir = os.path.join(working_root, repo_name)
     os.makedirs(repo_dir, exist_ok=False)
 
-    # Clone URL and repo setup
+    # Connect to GitHub API
     gh = Github(github_token)
     repo_api = gh.get_repo(full_repo_name)
     pr = repo_api.get_pull(pr_number)
@@ -66,12 +63,12 @@ def main():
 
     print(f"""
 📋 PR Info:
+- Repo: {full_repo_name}
 - Source Branch: {source_branch}
 - Destination Branch: {dest_branch}
-- Repo: {full_repo_name}
 - Clone URL: {clone_url}
 - New Branch: {new_branch}
-- Checkout Location: {repo_dir}
+- Checkout Path: {repo_dir}
 """)
 
     print(f"📦 Cloning repository into '{repo_dir}'...")
@@ -81,42 +78,48 @@ def main():
     git = repo.git
 
     try:
-        print("📥 Fetching latest changes...")
+        print("📥 Fetching latest from origin...")
         git.fetch("origin")
 
-        print("🔄 Checking out and updating branches...")
+        print("🔄 Checking out branches...")
         repo.git.checkout(dest_branch)
         git.pull("origin", dest_branch)
         repo.git.checkout(source_branch)
         git.pull("origin", source_branch)
 
-        # Create diff file in timestamp root directory
-        diff_file_path = os.path.join(working_root, "pr.diff")
-        print(f"📝 Creating full unified diff at {diff_file_path}...")
+        # Get merge-base for the PR range
+        merge_base = git.merge_base(dest_branch, source_branch).strip()
+        patch_file_path = os.path.join(working_root, "pr.patch")
 
-        with open(diff_file_path, 'w') as f:
-            f.write(git.diff(
-                f"{dest_branch}...{source_branch}",
-                unified=3,
-                full_index=True,
-                binary=True
-            ))
+        print(f"🧵 Creating full patch file from commits ({merge_base}..{source_branch}) at {patch_file_path}...")
+        git.format_patch(
+            f"{merge_base}..{source_branch}",
+            output_directory=working_root,
+            stdout=False,
+            start_number=1,
+            numbered=True,
+            cover_letter=False
+        )
+
+        # Find the patch file(s) — format-patch may create multiple
+        patch_files = [f for f in os.listdir(working_root) if f.endswith(".patch")]
+        if not patch_files:
+            print("❌ No patch files generated.")
+            sys.exit(1)
 
         print(f"🌿 Creating new branch '{new_branch}' from '{dest_branch}'...")
         repo.git.checkout(dest_branch)
         repo.git.checkout('-b', new_branch)
 
-        print("📎 Applying diff...")
-        try:
-            git.apply(diff_file_path)
-        except GitCommandError as err:
-            print("❌ Conflict or patch apply issue:")
-            print(err)
-            print("🔧 Please resolve manually in folder:", repo_dir)
-            sys.exit(1)
-
-        repo.git.add(A=True)
-        repo.index.commit(commit_msg)
+        print("📎 Applying patch using git am...")
+        for pf in sorted(patch_files):
+            patch_path = os.path.join(working_root, pf)
+            try:
+                git.am(patch_path)
+            except GitCommandError as err:
+                print("❌ Failed to apply patch. Manual intervention required.")
+                print(err)
+                sys.exit(1)
 
         print(f"🚀 Pushing '{new_branch}' to origin...")
         git.push('--set-upstream', 'origin', new_branch)
