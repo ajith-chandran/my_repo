@@ -106,13 +106,19 @@ def main():
 
         diff_file_path = os.path.join(working_root, "pr.diff")
 
-        with open(diff_file_path, "w") as diff_file:
-            subprocess.run(
-                ["git", "diff", "--binary", "--full-index", f"{dest_branch}..{source_branch}"],
-                cwd=repo_dir,
-                check=True,
-                stdout=diff_file
-            )
+        subprocess.run(
+    f"git diff --binary --full-index {dest_branch}..{source_branch} > pr.diff",
+    cwd=repo_dir,
+    check=True,
+    shell=True
+)
+
+diff_file_path = os.path.join(working_root, "pr.diff")
+os.replace(os.path.join(repo_dir, "pr.diff"), diff_file_path)
+
+# Move the file to working_root
+diff_file_path = os.path.join(working_root, "pr.diff")
+os.replace(os.path.join(repo_dir, "pr.diff"), diff_file_path)
 
         print(f"🧵 Diff file created: {diff_file_path}")
 
