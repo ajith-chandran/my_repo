@@ -16,7 +16,7 @@ def parse_pr_url(url):
     return match.group("owner"), match.group("repo"), int(match.group("pr_number"))
 
 def create_timestamped_directory(base_dir="working_directory"):
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = str(int(datetime.datetime.now().timestamp()))
     path = os.path.join(base_dir, timestamp)
     os.makedirs(path, exist_ok=False)
     return path, timestamp
