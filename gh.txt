@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import tempfile
+from git import Repo, GitCommandError
+from github import Github
+
+def usage():
+    print("Usage: python reapply_pr_diff.py <source_branch> <destination_branch> <new_branch_name> <commit_message> <github_token> <repo_owner/repo_name>")
+    sys.exit(1)
+
+def main():
+    if len(sys.argv) != 7:
+        usage()
+
+    source_branch = sys.argv[1]
+    dest_branch = sys.argv[2]
+    new_branch = sys.argv[3]
+    commit_msg = sys.argv[4]
+    github_token = sys.argv[5]
+    repo_full_name = sys.argv[6]  # e.g., user/repo
+
+    repo = Repo(".")
+    assert not repo.bare
+
+    git = repo.git
+
+    try:
+        print("📥 Fetching latest changes...")
+        git.fetch("origin")
+
+        print(f"🔄 Checking out and updating {source_branch} and {dest_branch}...")
+        repo.git.checkout(source_branch)
+        git.pull("origin", source_branch)
+        repo.git.checkout(dest_branch)
+        git.pull("origin", dest_branch)
+
+        # Create a diff
+        print("📝 Creating diff...")
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            diff_file = tmp.name
+        with open(diff_file, 'w') as f:
+            f.write(git.diff(f'{dest_branch}..{source_branch}'))
+
+        # Create new branch
+        print(f"🌿 Creating new branch {new_branch} from {dest_branch}...")
+        repo.git.checkout('-b', new_branch, dest_branch)
+
+        # Apply diff
+        print("📎 Applying diff...")
+        try:
+            git.apply(diff_file)
+        except GitCommandError:
+            print("❌ Conflict occurred while applying the diff. Please resolve manually.")
+            os.remove(diff_file)
+            sys.exit(1)
+
+        os.remove(diff_file)
+
+        repo.git.add(A=True)
+        repo.index.commit(commit_msg)
+
+        print(f"🚀 Pushing {new_branch} to origin...")
+        git.push('--set-upstream', 'origin', new_branch)
+
+        # Create a PR via PyGithub
+        print("📬 Creating pull request via GitHub API...")
+        gh = Github(github_token)
+        gh_repo = gh.get_repo(repo_full_name)
+
+        pr = gh_repo.create_pull(
+            title=commit_msg,
+            body=commit_msg,
+            head=new_branch,
+            base=dest_branch
+        )
+
+        print(f"✅ PR created: {pr.html_url}")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
