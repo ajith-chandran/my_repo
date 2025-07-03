@@ -3,7 +3,6 @@
 import os
 import re
 import sys
-import tempfile
 import datetime
 import webbrowser
 from git import Repo, GitCommandError
@@ -20,7 +19,7 @@ def create_timestamped_directory(base_dir="working_directory"):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     path = os.path.join(base_dir, timestamp)
     os.makedirs(path, exist_ok=False)
-    return path
+    return path, timestamp
 
 def main():
     if len(sys.argv) != 3:
@@ -49,8 +48,11 @@ def main():
     full_repo_name = f"{owner}/{repo_name}"
 
     # Create working directory with timestamp
-    working_dir = create_timestamped_directory()
-    print(f"🗂️  Working directory created: {working_dir}")
+    working_root, timestamp = create_timestamped_directory()
+    print(f"🗂️  Working directory created: {working_root}")
+
+    repo_dir = os.path.join(working_root, repo_name)
+    os.makedirs(repo_dir, exist_ok=False)
 
     # Clone URL and repo setup
     gh = Github(github_token)
@@ -69,13 +71,13 @@ def main():
 - Repo: {full_repo_name}
 - Clone URL: {clone_url}
 - New Branch: {new_branch}
+- Checkout Location: {repo_dir}
 """)
 
-    # Clone repo into working directory
-    print(f"📦 Cloning repository into '{working_dir}'...")
-    Repo.clone_from(clone_url, working_dir)
+    print(f"📦 Cloning repository into '{repo_dir}'...")
+    Repo.clone_from(clone_url, repo_dir)
 
-    repo = Repo(working_dir)
+    repo = Repo(repo_dir)
     git = repo.git
 
     try:
@@ -88,11 +90,17 @@ def main():
         repo.git.checkout(source_branch)
         git.pull("origin", source_branch)
 
-        # Create diff file (keep it!)
-        diff_file_path = os.path.join(working_dir, "pr.diff")
-        print(f"📝 Creating diff at {diff_file_path}")
+        # Create diff file in timestamp root directory
+        diff_file_path = os.path.join(working_root, "pr.diff")
+        print(f"📝 Creating full unified diff at {diff_file_path}...")
+
         with open(diff_file_path, 'w') as f:
-            f.write(git.diff(f"{dest_branch}..{source_branch}"))
+            f.write(git.diff(
+                f"{dest_branch}...{source_branch}",
+                unified=3,
+                full_index=True,
+                binary=True
+            ))
 
         print(f"🌿 Creating new branch '{new_branch}' from '{dest_branch}'...")
         repo.git.checkout(dest_branch)
@@ -101,8 +109,10 @@ def main():
         print("📎 Applying diff...")
         try:
             git.apply(diff_file_path)
-        except GitCommandError:
-            print("❌ Conflict occurred while applying the diff. Please resolve manually.")
+        except GitCommandError as err:
+            print("❌ Conflict or patch apply issue:")
+            print(err)
+            print("🔧 Please resolve manually in folder:", repo_dir)
             sys.exit(1)
 
         repo.git.add(A=True)
@@ -119,10 +129,8 @@ def main():
             base=dest_branch
         )
 
-        # ✅ Output PR URL and open in browser
         print("\n✅✅✅ Pull Request successfully created!")
         print(f"🔗 New PR URL: {new_pr.html_url}\n")
-
         webbrowser.open(new_pr.html_url)
 
     except Exception as e:
