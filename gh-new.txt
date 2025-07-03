@@ -28,9 +28,6 @@ def run_git_command(command, cwd):
         raise RuntimeError(f"Command failed: {' '.join(command)}\n{result.stderr}")
     return result.stdout.strip()
 
-def sanitize_filename_segment(text):
-    return re.sub(r'[^a-zA-Z0-9\-]', '', text.replace(' ', '-'))
-
 def main():
     if len(sys.argv) != 3:
         print("Usage: python reapply_pr_from_url.py <github_pr_url> <commit_message>")
@@ -96,7 +93,6 @@ def main():
         repo.git.checkout(source_branch)
         git.pull("origin", source_branch)
 
-        # Check for commits
         print(f"🔍 Checking for commits in range {dest_branch}..{source_branch}")
         log_output = run_git_command(
             ["git", "log", "--pretty=oneline", f"{dest_branch}..{source_branch}"], cwd=repo_dir
@@ -108,51 +104,43 @@ def main():
 
         print("✅ Commits found. Generating patch files...")
 
-        # Use git format-patch to generate .patch files into working_root
+        # Generate patch files
         subprocess.run(
             ["git", "format-patch", f"{dest_branch}..{source_branch}", "-o", working_root],
             cwd=repo_dir,
             check=True
         )
 
-        raw_patch_files = sorted([
-            f for f in os.listdir(working_root) if f.endswith(".patch")
+        patch_files = sorted([
+            os.path.join(working_root, f)
+            for f in os.listdir(working_root)
+            if f.endswith(".patch")
         ])
 
-        if not raw_patch_files:
+        if not patch_files:
             print("❌ No patch files generated.")
             sys.exit(1)
 
-        print(f"📁 Renaming patch files based on commit message: '{commit_msg}'")
-
-        # Clean commit message for filename use
-        message_segment = sanitize_filename_segment(commit_msg)
-
-        # Rename patches
-        renamed_patches = []
-        for original in raw_patch_files:
-            prefix = original[:3]  # 001, 002, etc.
-            new_name = f"{prefix}-{message_segment}.patch"
-            os.rename(
-                os.path.join(working_root, original),
-                os.path.join(working_root, new_name)
-            )
-            renamed_patches.append(os.path.join(working_root, new_name))
-
-        print(f"🧵 Renamed patches: {len(renamed_patches)}")
+        print(f"🧵 Patch files created: {len(patch_files)}")
 
         print(f"🌿 Creating new branch '{new_branch}' from '{dest_branch}'...")
         repo.git.checkout(dest_branch)
         repo.git.checkout('-b', new_branch)
 
-        print("📎 Applying renamed patches using git am...")
-        for patch_file in sorted(renamed_patches):
+        print("📎 Applying patches using `git apply` (for single clean commit)...")
+        for patch_file in patch_files:
             try:
-                git.am(patch_file)
+                git.apply(patch_file)
             except GitCommandError as err:
                 print(f"❌ Failed to apply patch: {patch_file}")
                 print(err)
                 sys.exit(1)
+
+        print("✅ All patches applied to working directory.")
+        print("📦 Staging and committing with your clean message...")
+
+        repo.git.add(A=True)
+        repo.index.commit(commit_msg)
 
         print(f"🚀 Pushing '{new_branch}' to origin...")
         git.push('--set-upstream', 'origin', new_branch)
