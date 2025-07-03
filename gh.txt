@@ -1,64 +1,94 @@
 #!/usr/bin/env python3
 
-import sys
 import os
+import re
+import sys
 import tempfile
+import webbrowser
 from git import Repo, GitCommandError
 from github import Github
 from dotenv import load_dotenv
 
-def prompt_if_missing(var_name, prompt_text):
-    value = os.getenv(var_name)
-    if not value:
-        value = input(f"{prompt_text}: ").strip()
-    return value
+def parse_pr_url(url):
+    match = re.match(r'https://github.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<pr_number>\d+)', url)
+    if not match:
+        raise ValueError("Invalid GitHub PR URL format.")
+    return match.group("owner"), match.group("repo"), int(match.group("pr_number"))
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python reapply_pr_diff.py <commit_message>")
-        print("Make sure .env includes required variables or input when prompted.")
+    if len(sys.argv) != 3:
+        print("Usage: python reapply_pr_from_url.py <github_pr_url> <commit_message>")
         sys.exit(1)
 
-    commit_msg = sys.argv[1]
+    pr_url = sys.argv[1]
+    commit_msg = sys.argv[2]
 
+    # Load environment variables
     load_dotenv()
+    github_token = os.getenv("GITHUB_TOKEN")
+    github_username = os.getenv("GITHUB_USERNAME")
 
-    github_token = prompt_if_missing("GITHUB_TOKEN", "GitHub Token")
-    github_username = prompt_if_missing("GITHUB_USERNAME", "GitHub Username")
-    repo_url = prompt_if_missing("REPO_URL", "Git repository clone URL (SSH/HTTPS)")
-    repo_name = prompt_if_missing("REPO_NAME", "GitHub repository (e.g., user/repo)")
+    if not github_token or not github_username:
+        print("❌ GITHUB_TOKEN and GITHUB_USERNAME must be set in the .env file.")
+        sys.exit(1)
 
-    source_branch = prompt_if_missing("SOURCE_BRANCH", "Source branch name")
-    dest_branch = prompt_if_missing("DEST_BRANCH", "Destination (base) branch name")
-    new_branch = prompt_if_missing("NEW_BRANCH", "New branch name to create")
+    try:
+        owner, repo_name, pr_number = parse_pr_url(pr_url)
+        print(f"🔍 Parsed PR URL: owner={owner}, repo={repo_name}, pr_number={pr_number}")
+    except ValueError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
 
-    # Clone if repo doesn't exist
-    if not os.path.exists(".git"):
-        print(f"🧭 Cloning repo from {repo_url}...")
-        Repo.clone_from(repo_url, ".")
+    full_repo_name = f"{owner}/{repo_name}"
+    local_dir = repo_name  # Clone into folder with repo name
 
-    repo = Repo(".")
-    assert not repo.bare
+    # Connect to GitHub API
+    gh = Github(github_token)
+    repo_api = gh.get_repo(full_repo_name)
+    pr = repo_api.get_pull(pr_number)
+
+    source_branch = pr.head.ref
+    dest_branch = pr.base.ref
+    clone_url = pr.head.repo.ssh_url if pr.head.repo.private else pr.head.repo.clone_url
+
+    new_branch = f"{source_branch}-new"
+
+    print(f"""
+📋 PR Info:
+- Source Branch: {source_branch}
+- Destination Branch: {dest_branch}
+- Repo: {full_repo_name}
+- Clone URL: {clone_url}
+- New Branch: {new_branch}
+""")
+
+    # Clone repo if not exists
+    if not os.path.exists(local_dir):
+        print(f"📦 Cloning repository into '{local_dir}'...")
+        Repo.clone_from(clone_url, local_dir)
+
+    repo = Repo(local_dir)
     git = repo.git
 
     try:
         print("📥 Fetching latest changes...")
         git.fetch("origin")
 
-        print(f"🔄 Checking out and updating {source_branch} and {dest_branch}...")
-        repo.git.checkout(source_branch)
-        git.pull("origin", source_branch)
+        print("🔄 Checking out and updating branches...")
         repo.git.checkout(dest_branch)
         git.pull("origin", dest_branch)
+        repo.git.checkout(source_branch)
+        git.pull("origin", source_branch)
 
-        print("📝 Creating diff...")
+        print("📝 Creating diff between base and head...")
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             diff_file = tmp.name
         with open(diff_file, 'w') as f:
-            f.write(git.diff(f'{dest_branch}..{source_branch}'))
+            f.write(git.diff(f"{dest_branch}..{source_branch}"))
 
-        print(f"🌿 Creating new branch {new_branch} from {dest_branch}...")
-        repo.git.checkout('-b', new_branch, dest_branch)
+        print(f"🌿 Creating new branch '{new_branch}' from '{dest_branch}'...")
+        repo.git.checkout(dest_branch)
+        repo.git.checkout('-b', new_branch)
 
         print("📎 Applying diff...")
         try:
@@ -73,21 +103,22 @@ def main():
         repo.git.add(A=True)
         repo.index.commit(commit_msg)
 
-        print(f"🚀 Pushing {new_branch} to origin...")
+        print(f"🚀 Pushing '{new_branch}' to origin...")
         git.push('--set-upstream', 'origin', new_branch)
 
-        print("📬 Creating pull request on GitHub...")
-        gh = Github(github_token)
-        gh_repo = gh.get_repo(repo_name)
-
-        pr = gh_repo.create_pull(
+        print("📬 Creating new Pull Request...")
+        new_pr = repo_api.create_pull(
             title=commit_msg,
             body=commit_msg,
             head=new_branch,
             base=dest_branch
         )
 
-        print(f"✅ PR created: {pr.html_url}")
+        # ✅ Output PR URL and open in browser
+        print("\n✅✅✅ Pull Request successfully created!")
+        print(f"🔗 New PR URL: {new_pr.html_url}\n")
+
+        webbrowser.open(new_pr.html_url)
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -95,29 +126,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-  
-GITHUB_TOKEN=ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-GITHUB_USERNAME=your-github-username
-REPO_URL=git@github.com:yourusername/yourrepo.git
-REPO_NAME=yourusername/yourrepo
-SOURCE_BRANCH=feature-branch
-DEST_BRANCH=main
-NEW_BRANCH=rebased-feature
-
-
-
-GitPython==3.1.43
-PyGithub==2.3.0
-python-dotenv==1.0.1
-
-
-
-
-python reapply_pr_diff.py "Apply PR changes from feature-branch"
-
-
-
-
-
