@@ -1,8 +1,3 @@
-GitPython==3.1.43
-PyGithub==2.3.0
-
-
-
 #!/usr/bin/env python3
 
 import sys
@@ -10,25 +5,40 @@ import os
 import tempfile
 from git import Repo, GitCommandError
 from github import Github
+from dotenv import load_dotenv
 
-def usage():
-    print("Usage: python reapply_pr_diff.py <source_branch> <destination_branch> <new_branch_name> <commit_message> <github_token> <repo_owner/repo_name>")
-    sys.exit(1)
+def prompt_if_missing(var_name, prompt_text):
+    value = os.getenv(var_name)
+    if not value:
+        value = input(f"{prompt_text}: ").strip()
+    return value
 
 def main():
-    if len(sys.argv) != 7:
-        usage()
+    if len(sys.argv) != 2:
+        print("Usage: python reapply_pr_diff.py <commit_message>")
+        print("Make sure .env includes required variables or input when prompted.")
+        sys.exit(1)
 
-    source_branch = sys.argv[1]
-    dest_branch = sys.argv[2]
-    new_branch = sys.argv[3]
-    commit_msg = sys.argv[4]
-    github_token = sys.argv[5]
-    repo_full_name = sys.argv[6]  # e.g., user/repo
+    commit_msg = sys.argv[1]
+
+    load_dotenv()
+
+    github_token = prompt_if_missing("GITHUB_TOKEN", "GitHub Token")
+    github_username = prompt_if_missing("GITHUB_USERNAME", "GitHub Username")
+    repo_url = prompt_if_missing("REPO_URL", "Git repository clone URL (SSH/HTTPS)")
+    repo_name = prompt_if_missing("REPO_NAME", "GitHub repository (e.g., user/repo)")
+
+    source_branch = prompt_if_missing("SOURCE_BRANCH", "Source branch name")
+    dest_branch = prompt_if_missing("DEST_BRANCH", "Destination (base) branch name")
+    new_branch = prompt_if_missing("NEW_BRANCH", "New branch name to create")
+
+    # Clone if repo doesn't exist
+    if not os.path.exists(".git"):
+        print(f"🧭 Cloning repo from {repo_url}...")
+        Repo.clone_from(repo_url, ".")
 
     repo = Repo(".")
     assert not repo.bare
-
     git = repo.git
 
     try:
@@ -41,18 +51,15 @@ def main():
         repo.git.checkout(dest_branch)
         git.pull("origin", dest_branch)
 
-        # Create a diff
         print("📝 Creating diff...")
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             diff_file = tmp.name
         with open(diff_file, 'w') as f:
             f.write(git.diff(f'{dest_branch}..{source_branch}'))
 
-        # Create new branch
         print(f"🌿 Creating new branch {new_branch} from {dest_branch}...")
         repo.git.checkout('-b', new_branch, dest_branch)
 
-        # Apply diff
         print("📎 Applying diff...")
         try:
             git.apply(diff_file)
@@ -69,10 +76,9 @@ def main():
         print(f"🚀 Pushing {new_branch} to origin...")
         git.push('--set-upstream', 'origin', new_branch)
 
-        # Create a PR via PyGithub
-        print("📬 Creating pull request via GitHub API...")
+        print("📬 Creating pull request on GitHub...")
         gh = Github(github_token)
-        gh_repo = gh.get_repo(repo_full_name)
+        gh_repo = gh.get_repo(repo_name)
 
         pr = gh_repo.create_pull(
             title=commit_msg,
@@ -89,3 +95,29 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+  
+GITHUB_TOKEN=ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+GITHUB_USERNAME=your-github-username
+REPO_URL=git@github.com:yourusername/yourrepo.git
+REPO_NAME=yourusername/yourrepo
+SOURCE_BRANCH=feature-branch
+DEST_BRANCH=main
+NEW_BRANCH=rebased-feature
+
+
+
+GitPython==3.1.43
+PyGithub==2.3.0
+python-dotenv==1.0.1
+
+
+
+
+python reapply_pr_diff.py "Apply PR changes from feature-branch"
+
+
+
+
+
