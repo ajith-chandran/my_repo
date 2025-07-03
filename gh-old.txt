@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+
+import os
+import re
+import sys
+import datetime
+import webbrowser
+from git import Repo, GitCommandError
+from github import Github
+from dotenv import load_dotenv
+
+def parse_pr_url(url):
+    match = re.match(r'https://github.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<pr_number>\d+)', url)
+    if not match:
+        raise ValueError("Invalid GitHub PR URL format.")
+    return match.group("owner"), match.group("repo"), int(match.group("pr_number"))
+
+def create_timestamped_directory(base_dir="working_directory"):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path = os.path.join(base_dir, timestamp)
+    os.makedirs(path, exist_ok=False)
+    return path, timestamp
+
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: python reapply_pr_from_url.py <github_pr_url> <commit_message>")
+        sys.exit(1)
+
+    pr_url = sys.argv[1]
+    commit_msg = sys.argv[2]
+
+    # Load environment variables
+    load_dotenv()
+    github_token = os.getenv("GITHUB_TOKEN")
+    github_username = os.getenv("GITHUB_USERNAME")
+
+    if not github_token or not github_username:
+        print("❌ GITHUB_TOKEN and GITHUB_USERNAME must be set in the .env file.")
+        sys.exit(1)
+
+    try:
+        owner, repo_name, pr_number = parse_pr_url(pr_url)
+        print(f"🔍 Parsed PR URL: owner={owner}, repo={repo_name}, pr_number={pr_number}")
+    except ValueError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
+
+    full_repo_name = f"{owner}/{repo_name}"
+
+    # Create working directory with timestamp
+    working_root, timestamp = create_timestamped_directory()
+    print(f"🗂️  Working directory created: {working_root}")
+
+    repo_dir = os.path.join(working_root, repo_name)
+    os.makedirs(repo_dir, exist_ok=False)
+
+    # Clone URL and repo setup
+    gh = Github(github_token)
+    repo_api = gh.get_repo(full_repo_name)
+    pr = repo_api.get_pull(pr_number)
+
+    source_branch = pr.head.ref
+    dest_branch = pr.base.ref
+    clone_url = pr.head.repo.ssh_url if pr.head.repo.private else pr.head.repo.clone_url
+    new_branch = f"{source_branch}-new"
+
+    print(f"""
+📋 PR Info:
+- Source Branch: {source_branch}
+- Destination Branch: {dest_branch}
+- Repo: {full_repo_name}
+- Clone URL: {clone_url}
+- New Branch: {new_branch}
+- Checkout Location: {repo_dir}
+""")
+
+    print(f"📦 Cloning repository into '{repo_dir}'...")
+    Repo.clone_from(clone_url, repo_dir)
+
+    repo = Repo(repo_dir)
+    git = repo.git
+
+    try:
+        print("📥 Fetching latest changes...")
+        git.fetch("origin")
+
+        print("🔄 Checking out and updating branches...")
+        repo.git.checkout(dest_branch)
+        git.pull("origin", dest_branch)
+        repo.git.checkout(source_branch)
+        git.pull("origin", source_branch)
+
+        # Create diff file in timestamp root directory
+        diff_file_path = os.path.join(working_root, "pr.diff")
+        print(f"📝 Creating full unified diff at {diff_file_path}...")
+
+        with open(diff_file_path, 'w') as f:
+            f.write(git.diff(
+                f"{dest_branch}...{source_branch}",
+                unified=3,
+                full_index=True,
+                binary=True
+            ))
+
+        print(f"🌿 Creating new branch '{new_branch}' from '{dest_branch}'...")
+        repo.git.checkout(dest_branch)
+        repo.git.checkout('-b', new_branch)
+
+        print("📎 Applying diff...")
+        try:
+            git.apply(diff_file_path)
+        except GitCommandError as err:
+            print("❌ Conflict or patch apply issue:")
+            print(err)
+            print("🔧 Please resolve manually in folder:", repo_dir)
+            sys.exit(1)
+
+        repo.git.add(A=True)
+        repo.index.commit(commit_msg)
+
+        print(f"🚀 Pushing '{new_branch}' to origin...")
+        git.push('--set-upstream', 'origin', new_branch)
+
+        print("📬 Creating new Pull Request...")
+        new_pr = repo_api.create_pull(
+            title=commit_msg,
+            body=commit_msg,
+            head=new_branch,
+            base=dest_branch
+        )
+
+        print("\n✅✅✅ Pull Request successfully created!")
+        print(f"🔗 New PR URL: {new_pr.html_url}\n")
+        webbrowser.open(new_pr.html_url)
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
