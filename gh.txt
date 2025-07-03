@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import tempfile
+import datetime
 import webbrowser
 from git import Repo, GitCommandError
 from github import Github
@@ -14,6 +15,12 @@ def parse_pr_url(url):
     if not match:
         raise ValueError("Invalid GitHub PR URL format.")
     return match.group("owner"), match.group("repo"), int(match.group("pr_number"))
+
+def create_timestamped_directory(base_dir="working_directory"):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path = os.path.join(base_dir, timestamp)
+    os.makedirs(path, exist_ok=False)
+    return path
 
 def main():
     if len(sys.argv) != 3:
@@ -40,9 +47,12 @@ def main():
         sys.exit(1)
 
     full_repo_name = f"{owner}/{repo_name}"
-    local_dir = repo_name  # Clone into folder with repo name
 
-    # Connect to GitHub API
+    # Create working directory with timestamp
+    working_dir = create_timestamped_directory()
+    print(f"🗂️  Working directory created: {working_dir}")
+
+    # Clone URL and repo setup
     gh = Github(github_token)
     repo_api = gh.get_repo(full_repo_name)
     pr = repo_api.get_pull(pr_number)
@@ -50,7 +60,6 @@ def main():
     source_branch = pr.head.ref
     dest_branch = pr.base.ref
     clone_url = pr.head.repo.ssh_url if pr.head.repo.private else pr.head.repo.clone_url
-
     new_branch = f"{source_branch}-new"
 
     print(f"""
@@ -62,12 +71,11 @@ def main():
 - New Branch: {new_branch}
 """)
 
-    # Clone repo if not exists
-    if not os.path.exists(local_dir):
-        print(f"📦 Cloning repository into '{local_dir}'...")
-        Repo.clone_from(clone_url, local_dir)
+    # Clone repo into working directory
+    print(f"📦 Cloning repository into '{working_dir}'...")
+    Repo.clone_from(clone_url, working_dir)
 
-    repo = Repo(local_dir)
+    repo = Repo(working_dir)
     git = repo.git
 
     try:
@@ -80,10 +88,10 @@ def main():
         repo.git.checkout(source_branch)
         git.pull("origin", source_branch)
 
-        print("📝 Creating diff between base and head...")
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            diff_file = tmp.name
-        with open(diff_file, 'w') as f:
+        # Create diff file (keep it!)
+        diff_file_path = os.path.join(working_dir, "pr.diff")
+        print(f"📝 Creating diff at {diff_file_path}")
+        with open(diff_file_path, 'w') as f:
             f.write(git.diff(f"{dest_branch}..{source_branch}"))
 
         print(f"🌿 Creating new branch '{new_branch}' from '{dest_branch}'...")
@@ -92,13 +100,10 @@ def main():
 
         print("📎 Applying diff...")
         try:
-            git.apply(diff_file)
+            git.apply(diff_file_path)
         except GitCommandError:
             print("❌ Conflict occurred while applying the diff. Please resolve manually.")
-            os.remove(diff_file)
             sys.exit(1)
-
-        os.remove(diff_file)
 
         repo.git.add(A=True)
         repo.index.commit(commit_msg)
