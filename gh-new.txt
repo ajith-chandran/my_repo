@@ -102,41 +102,33 @@ def main():
             print("❌ No commits found between source and destination branch. Nothing to reapply.")
             sys.exit(1)
 
-        print("✅ Commits found. Generating patch files...")
+        print("✅ Commits found. Generating full unified diff...")
 
-        # Generate patch files
-        subprocess.run(
-            ["git", "format-patch", f"{dest_branch}..{source_branch}", "-o", working_root],
-            cwd=repo_dir,
-            check=True
-        )
+        diff_file_path = os.path.join(working_root, "pr.diff")
 
-        patch_files = sorted([
-            os.path.join(working_root, f)
-            for f in os.listdir(working_root)
-            if f.endswith(".patch")
-        ])
+        with open(diff_file_path, "w") as diff_file:
+            subprocess.run(
+                ["git", "diff", "--binary", "--full-index", f"{dest_branch}..{source_branch}"],
+                cwd=repo_dir,
+                check=True,
+                stdout=diff_file
+            )
 
-        if not patch_files:
-            print("❌ No patch files generated.")
-            sys.exit(1)
-
-        print(f"🧵 Patch files created: {len(patch_files)}")
+        print(f"🧵 Diff file created: {diff_file_path}")
 
         print(f"🌿 Creating new branch '{new_branch}' from '{dest_branch}'...")
         repo.git.checkout(dest_branch)
         repo.git.checkout('-b', new_branch)
 
-        print("📎 Applying patches using `git apply` (for single clean commit)...")
-        for patch_file in patch_files:
-            try:
-                git.apply(patch_file)
-            except GitCommandError as err:
-                print(f"❌ Failed to apply patch: {patch_file}")
-                print(err)
-                sys.exit(1)
+        print("📎 Applying full diff using `git apply`...")
+        try:
+            git.apply(diff_file_path)
+        except GitCommandError as err:
+            print("❌ Failed to apply the diff.")
+            print(err)
+            sys.exit(1)
 
-        print("✅ All patches applied to working directory.")
+        print("✅ All changes applied to working directory.")
         print("📦 Staging and committing with your clean message...")
 
         repo.git.add(A=True)
