@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import datetime
+import subprocess
 import webbrowser
 from git import Repo, GitCommandError
 from github import Github
@@ -17,9 +18,15 @@ def parse_pr_url(url):
 
 def create_timestamped_directory(base_dir="working_directory"):
     timestamp = str(int(datetime.datetime.now().timestamp()))
-    path = os.path.join(base_dir, timestamp)
+    path = os.path.abspath(os.path.join(base_dir, timestamp))
     os.makedirs(path, exist_ok=False)
     return path, timestamp
+
+def run_git_command(command, cwd):
+    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Command failed: {' '.join(command)}\n{result.stderr}")
+    return result.stdout.strip()
 
 def main():
     if len(sys.argv) != 3:
@@ -29,7 +36,7 @@ def main():
     pr_url = sys.argv[1]
     commit_msg = sys.argv[2]
 
-    # Load .env
+    # Load environment variables
     load_dotenv()
     github_token = os.getenv("GITHUB_TOKEN")
     github_username = os.getenv("GITHUB_USERNAME")
@@ -68,7 +75,7 @@ def main():
 - Destination Branch: {dest_branch}
 - Clone URL: {clone_url}
 - New Branch: {new_branch}
-- Checkout Path: {repo_dir}
+- Repo Checkout Path: {repo_dir}
 """)
 
     print(f"📦 Cloning repository into '{repo_dir}'...")
@@ -81,43 +88,53 @@ def main():
         print("📥 Fetching latest from origin...")
         git.fetch("origin")
 
-        print("🔄 Checking out branches...")
+        print("🔄 Checking out and updating branches...")
         repo.git.checkout(dest_branch)
         git.pull("origin", dest_branch)
         repo.git.checkout(source_branch)
         git.pull("origin", source_branch)
 
-        # Get merge-base for the PR range
-        merge_base = git.merge_base(dest_branch, source_branch).strip()
-        patch_file_path = os.path.join(working_root, "pr.patch")
-
-        print(f"🧵 Creating full patch file from commits ({merge_base}..{source_branch}) at {patch_file_path}...")
-        git.format_patch(
-            f"{merge_base}..{source_branch}",
-            output_directory=working_root,
-            stdout=False,
-            start_number=1,
-            numbered=True,
-            cover_letter=False
+        # Check for commits
+        print(f"🔍 Checking for commits in range {dest_branch}..{source_branch}")
+        log_output = run_git_command(
+            ["git", "log", "--pretty=oneline", f"{dest_branch}..{source_branch}"], cwd=repo_dir
         )
 
-        # Find the patch file(s) — format-patch may create multiple
-        patch_files = [f for f in os.listdir(working_root) if f.endswith(".patch")]
-        if not patch_files:
-            print("❌ No patch files generated.")
+        if not log_output:
+            print("❌ No commits found between source and destination branch. Nothing to reapply.")
             sys.exit(1)
+
+        print("✅ Commits found. Generating patch files...")
+
+        # Use git format-patch to generate .patch files into working_root
+        subprocess.run(
+            ["git", "format-patch", f"{dest_branch}..{source_branch}", "-o", working_root],
+            cwd=repo_dir,
+            check=True
+        )
+
+        patch_files = sorted([
+            os.path.join(working_root, f)
+            for f in os.listdir(working_root)
+            if f.endswith(".patch")
+        ])
+
+        if not patch_files:
+            print("❌ No patch files generated. Please check manually.")
+            sys.exit(1)
+
+        print(f"🧵 Patch files created: {len(patch_files)}")
 
         print(f"🌿 Creating new branch '{new_branch}' from '{dest_branch}'...")
         repo.git.checkout(dest_branch)
         repo.git.checkout('-b', new_branch)
 
-        print("📎 Applying patch using git am...")
-        for pf in sorted(patch_files):
-            patch_path = os.path.join(working_root, pf)
+        print("📎 Applying patches using git am...")
+        for patch_file in patch_files:
             try:
-                git.am(patch_path)
+                git.am(patch_file)
             except GitCommandError as err:
-                print("❌ Failed to apply patch. Manual intervention required.")
+                print(f"❌ Failed to apply patch: {patch_file}")
                 print(err)
                 sys.exit(1)
 
