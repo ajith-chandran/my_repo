@@ -5,46 +5,47 @@ from typing import Any
 
 def sort_json_structure(data: Any) -> Any:
     if isinstance(data, dict):
-        # Sort keys alphabetically and recurse
+        # Sort dictionary keys and recurse
         return {k: sort_json_structure(v) for k, v in sorted(data.items())}
 
     elif isinstance(data, list):
-        # Recursively sort items in the list
+        # Recursively sort each item first
         data = [sort_json_structure(item) for item in data]
 
-        # If all items are dicts and have identical keys, sort by their values
+        # If all items are dicts and have same keys, sort by values of those keys
         if data and all(isinstance(item, dict) for item in data):
             key_set = set(data[0].keys())
             if all(set(item.keys()) == key_set for item in data):
-                sorted_data = sorted(
-                    data,
-                    key=lambda item: tuple(str(item[k]) for k in sorted(key_set))
-                )
-                return sorted_data
+                # Sort by tuple of values for sorted keys
+                sorted_keys = sorted(key_set)
+                data = sorted(data, key=lambda item: tuple(str(item[k]) for k in sorted_keys))
         return data
 
     else:
         return data
 
 def main():
-    parser = argparse.ArgumentParser(description='Sort a JSON file recursively.')
-    parser.add_argument('--input', required=True, help='Input JSON filename (in json/input/ folder)')
-    parser.add_argument('--output', required=True, help='Output JSON filename (in json/output/ folder)')
+    parser = argparse.ArgumentParser(description='Recursively sort JSON file with key and value ordering.')
+    parser.add_argument('--input', required=True, help='Input filename (from json/input/ folder)')
+    parser.add_argument('--output', required=True, help='Output filename (to json/output/ folder)')
     args = parser.parse_args()
 
     input_path = os.path.join('json', 'input', args.input)
     output_path = os.path.join('json', 'output', args.output)
 
+    # Load JSON
     with open(input_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
+    # Sort recursively
     sorted_data = sort_json_structure(data)
 
+    # Write with proper indenting
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(sorted_data, f, indent=2, ensure_ascii=False)
 
-    print(f'Successfully sorted and saved JSON to: {output_path}')
+    print(f"Sorted JSON written to: {output_path}")
 
 if __name__ == '__main__':
     main()
