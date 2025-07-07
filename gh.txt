@@ -1,161 +1,55 @@
-#!/usr/bin/env python3
-
 import os
-import re
-import sys
-import datetime
-import subprocess
-import webbrowser
-from git import Repo, GitCommandError
-from github import Github
-from dotenv import load_dotenv
+import json
+import argparse
+from typing import Any
 
-def parse_pr_url(url):
-    match = re.match(r'https://github.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<pr_number>\d+)', url)
-    if not match:
-        raise ValueError("Invalid GitHub PR URL format.")
-    return match.group("owner"), match.group("repo"), int(match.group("pr_number"))
-
-def create_timestamped_directory(base_dir="working_directory"):
-    timestamp = str(int(datetime.datetime.now().timestamp()))
-    path = os.path.abspath(os.path.join(base_dir, timestamp))
-    os.makedirs(path, exist_ok=False)
-    return path, timestamp
-
-def run_git_command(command, cwd):
-    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(command)}\n{result.stderr}")
-    return result.stdout.strip()
+def sort_json_structure(data: Any) -> Any:
+    if isinstance(data, dict):
+        # Sort dictionary keys alphabetically
+        return {k: sort_json_structure(data[k]) for k in sorted(data)}
+    
+    elif isinstance(data, list):
+        if all(isinstance(item, dict) for item in data):
+            if not data:
+                return data
+            # Sort the list of dicts by their values, using all keys in order
+            keys = list(data[0].keys())
+            def sort_key(item):
+                return tuple(item.get(k) for k in keys)
+            sorted_list = sorted(data, key=sort_key)
+            return [sort_json_structure(item) for item in sorted_list]
+        else:
+            # Regular list: sort elements if possible, else leave as-is
+            try:
+                return sorted(sort_json_structure(item) for item in data)
+            except Exception:
+                return [sort_json_structure(item) for item in data]
+    
+    else:
+        return data
 
 def main():
-    if len(sys.argv) != 3:
-        print("Usage: python reapply_pr_from_url.py <github_pr_url> <commit_message>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description='Sort a JSON file recursively.')
+    parser.add_argument('--input', required=True, help='Input JSON filename (from json/input/ folder)')
+    parser.add_argument('--output', required=True, help='Output JSON filename (to json/output/ folder)')
+    args = parser.parse_args()
 
-    pr_url = sys.argv[1]
-    commit_msg = sys.argv[2]
+    input_path = os.path.join('json', 'input', args.input)
+    output_path = os.path.join('json', 'output', args.output)
 
-    # Load environment variables
-    load_dotenv()
-    github_token = os.getenv("GITHUB_TOKEN")
-    github_username = os.getenv("GITHUB_USERNAME")
+    # Load JSON
+    with open(input_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
 
-    if not github_token or not github_username:
-        print("❌ GITHUB_TOKEN and GITHUB_USERNAME must be set in the .env file.")
-        sys.exit(1)
+    # Sort JSON recursively
+    sorted_data = sort_json_structure(data)
 
-    try:
-        owner, repo_name, pr_number = parse_pr_url(pr_url)
-    except ValueError as e:
-        print(f"❌ {e}")
-        sys.exit(1)
+    # Save sorted JSON
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(sorted_data, f, indent=2, ensure_ascii=False)
 
-    full_repo_name = f"{owner}/{repo_name}"
-    working_root, timestamp = create_timestamped_directory()
-    print(f"🗂️  Working directory created: {working_root}")
+    print(f'Successfully sorted and saved JSON to: {output_path}')
 
-    repo_dir = os.path.join(working_root, repo_name)
-    os.makedirs(repo_dir, exist_ok=False)
-
-    # Connect to GitHub API
-    gh = Github(github_token)
-    repo_api = gh.get_repo(full_repo_name)
-    pr = repo_api.get_pull(pr_number)
-
-    source_branch = pr.head.ref
-    dest_branch = pr.base.ref
-    clone_url = pr.head.repo.ssh_url if pr.head.repo.private else pr.head.repo.clone_url
-    new_branch = f"{source_branch}-new"
-
-    print(f"""
-📋 PR Info:
-- Repo: {full_repo_name}
-- Source Branch: {source_branch}
-- Destination Branch: {dest_branch}
-- Clone URL: {clone_url}
-- New Branch: {new_branch}
-- Repo Checkout Path: {repo_dir}
-""")
-
-    print(f"📦 Cloning repository into '{repo_dir}'...")
-    Repo.clone_from(clone_url, repo_dir)
-
-    repo = Repo(repo_dir)
-    git = repo.git
-
-    try:
-        print("📥 Fetching latest from origin...")
-        git.fetch("origin")
-
-        print("🔄 Checking out and updating branches...")
-        repo.git.checkout(dest_branch)
-        git.pull("origin", dest_branch)
-        repo.git.checkout(source_branch)
-        git.pull("origin", source_branch)
-
-        # Check for commits
-        print(f"🔍 Checking for commits in range {dest_branch}..{source_branch}")
-        log_output = run_git_command(
-            ["git", "log", "--pretty=oneline", f"{dest_branch}..{source_branch}"], cwd=repo_dir
-        )
-
-        if not log_output:
-            print("❌ No commits found between source and destination branch. Nothing to reapply.")
-            sys.exit(1)
-
-        print("✅ Commits found. Generating patch files...")
-
-        # Use git format-patch to generate .patch files into working_root
-        subprocess.run(
-            ["git", "format-patch", f"{dest_branch}..{source_branch}", "-o", working_root],
-            cwd=repo_dir,
-            check=True
-        )
-
-        patch_files = sorted([
-            os.path.join(working_root, f)
-            for f in os.listdir(working_root)
-            if f.endswith(".patch")
-        ])
-
-        if not patch_files:
-            print("❌ No patch files generated. Please check manually.")
-            sys.exit(1)
-
-        print(f"🧵 Patch files created: {len(patch_files)}")
-
-        print(f"🌿 Creating new branch '{new_branch}' from '{dest_branch}'...")
-        repo.git.checkout(dest_branch)
-        repo.git.checkout('-b', new_branch)
-
-        print("📎 Applying patches using git am...")
-        for patch_file in patch_files:
-            try:
-                git.am(patch_file)
-            except GitCommandError as err:
-                print(f"❌ Failed to apply patch: {patch_file}")
-                print(err)
-                sys.exit(1)
-
-        print(f"🚀 Pushing '{new_branch}' to origin...")
-        git.push('--set-upstream', 'origin', new_branch)
-
-        print("📬 Creating new Pull Request...")
-        new_pr = repo_api.create_pull(
-            title=commit_msg,
-            body=commit_msg,
-            head=new_branch,
-            base=dest_branch
-        )
-
-        print("\n✅✅✅ Pull Request successfully created!")
-        print(f"🔗 New PR URL: {new_pr.html_url}\n")
-        webbrowser.open(new_pr.html_url)
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        sys.exit(1)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
