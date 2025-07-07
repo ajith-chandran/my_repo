@@ -5,46 +5,41 @@ from typing import Any
 
 def sort_json_structure(data: Any) -> Any:
     if isinstance(data, dict):
-        # Sort dictionary keys alphabetically
-        return {k: sort_json_structure(data[k]) for k in sorted(data)}
-    
+        # Sort keys alphabetically and recurse
+        return {k: sort_json_structure(v) for k, v in sorted(data.items())}
+
     elif isinstance(data, list):
-        if all(isinstance(item, dict) for item in data):
-            if not data:
-                return data
-            # Sort the list of dicts by their values, using all keys in order
-            keys = list(data[0].keys())
-            def sort_key(item):
-                return tuple(item.get(k) for k in keys)
-            sorted_list = sorted(data, key=sort_key)
-            return [sort_json_structure(item) for item in sorted_list]
-        else:
-            # Regular list: sort elements if possible, else leave as-is
-            try:
-                return sorted(sort_json_structure(item) for item in data)
-            except Exception:
-                return [sort_json_structure(item) for item in data]
-    
+        # Recursively sort items in the list
+        data = [sort_json_structure(item) for item in data]
+
+        # If all items are dicts and have identical keys, sort by their values
+        if data and all(isinstance(item, dict) for item in data):
+            key_set = set(data[0].keys())
+            if all(set(item.keys()) == key_set for item in data):
+                sorted_data = sorted(
+                    data,
+                    key=lambda item: tuple(str(item[k]) for k in sorted(key_set))
+                )
+                return sorted_data
+        return data
+
     else:
         return data
 
 def main():
     parser = argparse.ArgumentParser(description='Sort a JSON file recursively.')
-    parser.add_argument('--input', required=True, help='Input JSON filename (from json/input/ folder)')
-    parser.add_argument('--output', required=True, help='Output JSON filename (to json/output/ folder)')
+    parser.add_argument('--input', required=True, help='Input JSON filename (in json/input/ folder)')
+    parser.add_argument('--output', required=True, help='Output JSON filename (in json/output/ folder)')
     args = parser.parse_args()
 
     input_path = os.path.join('json', 'input', args.input)
     output_path = os.path.join('json', 'output', args.output)
 
-    # Load JSON
     with open(input_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    # Sort JSON recursively
     sorted_data = sort_json_structure(data)
 
-    # Save sorted JSON
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(sorted_data, f, indent=2, ensure_ascii=False)
