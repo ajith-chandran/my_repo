@@ -10,13 +10,11 @@ import threading
 from jinja2 import Template
 from datetime import datetime
 from colorama import Fore, Style, init as colorama_init
-from urllib.parse import urlparse
-import shelve
 
 colorama_init(autoreset=True)
 
 class APIRunner:
-    def __init__(self, sequence_name, environment, verbosity, resume_code=None):
+    def __init__(self, sequence_name, environment, verbosity):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(base_dir, 'config.json')
         with open(config_path, 'r') as f:
@@ -29,200 +27,175 @@ class APIRunner:
         self.base_dir = base_dir
         self.skip_retry_flag = False
         self.verbosity = verbosity
-        self.resume_code = resume_code
-        self.session_status = {}
-
-        if resume_code:
-            with shelve.open(os.path.join(base_dir, 'session_db')) as db:
-                session = db.get(resume_code)
-                if not session:
-                    raise Exception(f"Session code {resume_code} not found.")
-                self.sequence_name = session['sequence']
-                self.environment = session['environment']
-                self.variables.update(session['variables'])
-                self.resume_from_step = session['failed_step']
-        else:
-            self.resume_from_step = None
-
-    def listen_for_skip(self):
-        print("Press 's' then Enter at any time to skip retries for the current step.")
-        while True:
-            if sys.stdin.read(1).lower() == 's':
-                self.skip_retry_flag = True
-                break
 
     def render_template(self, template_str):
         template = Template(template_str)
         return template.render(**self.variables)
-
-    def extract_variables(self, extract_config, response_json):
-        for var_name, rule in extract_config.items():
-            if isinstance(rule, str):
-                value = self.get_nested_value(response_json, rule)
-            elif isinstance(rule, dict) and 'from' in rule and 'match' in rule and 'select' in rule:
-                array_data = self.get_nested_value(response_json, rule['from'])
-                value = None
-                if isinstance(array_data, list):
-                    for item in array_data:
-                        match_field, match_value = list(rule['match'].items())[0]
-                        if item.get(match_field) == match_value:
-                            value = item.get(rule['select'])
-                            break
-                else:
-                    value = None
-            else:
-                value = None
-
-            if value is not None:
-                self.variables[var_name] = value
-            else:
-                print(f"Warning: Could not extract {var_name} using rule {rule}")
 
     def load_template(self, template_path):
         full_path = os.path.join(self.base_dir, template_path)
         with open(full_path, 'r') as f:
             return f.read()
 
-    def evaluate_success_condition(self, condition, response_json):
-        failed_messages = []
-
-        def evaluate(single_condition):
-            if 'env_var' in single_condition:
-                value = self.variables.get(single_condition['env_var'])
-            else:
-                value = self.get_nested_value(response_json, single_condition['path'])
-
-            result = False
-            if 'equals' in single_condition:
-                expected = self.render_template(single_condition['equals'])
-                result = str(value).lower() == expected.lower()
-            elif 'exists' in single_condition:
-                result = single_condition['exists'] == (value is not None)
-            elif 'not_exists' in single_condition:
-                result = single_condition['not_exists'] == (value is None)
-
-            if not result and 'message' in single_condition:
-                rendered_msg = self.render_template(single_condition['message'])
-                failed_messages.append(rendered_msg)
-            return result
-
-        if isinstance(condition, dict) and 'conditions' in condition:
-            logic = condition.get('logic', 'AND').upper()
-            conditions = condition['conditions']
-            results = [evaluate(c) for c in conditions]
-            if not (all(results) if logic == 'AND' else any(results)):
-                for msg in failed_messages:
-                    print(f"[Condition Failed] {msg}")
-                return False
-            return True
-        elif isinstance(condition, list):
-            results = [evaluate(c) for c in condition]
-            if not all(results):
-                for msg in failed_messages:
-                    print(f"[Condition Failed] {msg}")
-                return False
-            return True
-        else:
-            return evaluate(condition)
-
-    def interruptible_sleep(self, duration, final_attempt=False):
-        if final_attempt:
-            return
-        waited = 0
-        interval = 0.2
-        while waited < duration:
-            if self.skip_retry_flag:
-                break
-            time.sleep(interval)
-            waited += interval
-
     def make_request(self, step_name):
         step = self.config['api_calls'][step_name]
+        system = step.get('system')
+        env_systems = self.config.get('environments', {}).get(self.environment, {})
+        base_url = env_systems.get(system)
+        endpoint_template = self.render_template(step['endpoint'])
+        url = base_url + endpoint_template
+        method = step.get('method', 'GET').upper()
+        headers = json.loads(self.render_template(json.dumps(step.get('headers', {}))))
+        timeout = step.get('timeout', 10)
         retries = step.get('retries')
         retry_delay = step.get('retry_delay', 2)
         duration_limit = step.get('duration_limit', 300)
-        timeout = step.get('timeout', 10)
-        start_time = datetime.now()
-        attempt = 0
-        max_attempts = retries or (duration_limit // retry_delay)
-        proceed_on_failure = step.get('proceed_on_failure', False)
+        template_path = step.get('template')
+        form_data = step.get('form_data')
+        extract = step.get('extract', {})
+        print_output = step.get('print_output', [])
+        success_condition = step.get('success_condition')
 
-        self.skip_retry_flag = False
-        threading.Thread(target=self.listen_for_skip, daemon=True).start()
+        body = None
+        if template_path:
+            template_str = self.load_template(template_path)
+            rendered_body = self.render_template(template_str)
+            body = json.loads(rendered_body)
+
+        auth = None
+        if 'auth' in step and step['auth'].get('type') == 'basic':
+            username = self.render_template(step['auth'].get('username', ''))
+            password = self.render_template(step['auth'].get('password', ''))
+            auth = (username, password)
+
+        attempt = 0
+        start_time = datetime.now()
+        approx_total_attempts = (duration_limit // retry_delay) if retries is None else retries
 
         while True:
-            final_attempt = (retries is not None and attempt == retries - 1) or \
-                            (retries is None and (datetime.now() - start_time).total_seconds() + retry_delay > duration_limit)
-            attempt += 1
-            try:
-                # (Truncated actual request logic for brevity)
-                # Simulate API request and success condition...
-                success = False  # Replace with real logic
-                if success:
-                    self.session_status[step_name] = 'Success'
-                    return
-                else:
-                    raise Exception("Condition Not Met")
-            except Exception as e:
-                reason = "User Interrupted" if self.skip_retry_flag else str(e)
-                self.session_status[step_name] = reason
-                if self.skip_retry_flag or final_attempt:
-                    if not proceed_on_failure:
-                        self.save_session(step_name)
-                        raise
-                    return
-                self.interruptible_sleep(retry_delay, final_attempt=final_attempt)
+            if retries is not None and attempt >= retries:
+                raise Exception(f"Failed to call {step_name} after {retries} retries")
 
-    def save_session(self, failed_step):
-        session_code = ''.join(random.choices(string.digits, k=5))
-        with shelve.open(os.path.join(self.base_dir, 'session_db')) as db:
-            db[session_code] = {
-                'sequence': self.sequence_name,
-                'environment': self.environment,
-                'variables': self.variables,
-                'failed_step': failed_step,
-                'timestamp': str(datetime.now())
+            if retries is None and (datetime.now() - start_time).total_seconds() > duration_limit:
+                raise TimeoutError(f"Exceeded total duration limit for {step_name}")
+
+            attempt += 1
+            remaining = (retries - attempt) if retries is not None else (approx_total_attempts - attempt)
+
+            request_kwargs = {
+                'method': method,
+                'url': url,
+                'headers': headers,
+                'timeout': timeout,
+                'auth': auth
             }
-        print(f"Session saved. Resume with: --resume {session_code}")
+
+            if form_data:
+                request_kwargs['data'] = {
+                    k: self.render_template(str(v)) for k, v in form_data.items()
+                }
+            elif body:
+                request_kwargs['json'] = body
+
+            if self.verbosity >= 3:
+                self.print_and_log(f"\n{Fore.CYAN}--- Request: {step_name} ---{Style.RESET_ALL}")
+                self.print_and_log(f"URL: {url}")
+                self.print_and_log(f"Method: {method}")
+                self.print_and_log(f"Headers: {headers}")
+                if body:
+                    self.print_and_log(f"Payload: {json.dumps(body, indent=2)}")
+                elif form_data:
+                    self.print_and_log(f"Form Data: {json.dumps(form_data, indent=2)}")
+
+            print(f"{Fore.GREEN}{step_name}{Style.RESET_ALL}")
+            print(f"Calling method {method} (attempt {attempt})")
+            response = requests.request(**request_kwargs)
+
+            if self.verbosity >= 3:
+                self.print_and_log(f"{Fore.CYAN}--- Response: {step_name} ---{Style.RESET_ALL}")
+                try:
+                    response_json = response.json()
+                    self.print_and_log(json.dumps(response_json, indent=2))
+                except Exception:
+                    self.print_and_log(response.text)
+
+            response.raise_for_status()
+            response_json = response.json()
+
+            if extract:
+                self.extract_variables(extract, response_json)
+
+            if success_condition:
+                if self.evaluate_success_condition(success_condition, response_json):
+                    print(f"{Fore.GREEN}Success condition met for {step_name}.{Style.RESET_ALL}")
+                    if print_output:
+                        self.print_outputs(print_output, response_json, body or {})
+                    return response
+                else:
+                    retry_msg = f"{Fore.RED}Condition not satisfied{Style.RESET_ALL}"
+                    if isinstance(success_condition, dict) and 'message' in success_condition:
+                        retry_msg = self.render_template(success_condition.get("message", retry_msg))
+                    print(f"Status: {step_name} - Attempt {attempt} failed: {retry_msg} | Remaining: {remaining} | Next retry in {retry_delay}s")
+                    if retries is None or attempt < retries:
+                        print(f"Waiting {retry_delay} seconds before retrying...")
+                        time.sleep(retry_delay)
+                    raise Exception("Condition not satisfied")
+            else:
+                if print_output:
+                    self.print_outputs(print_output, response_json, body or {})
+                return response
 
     def run(self):
         sequence = self.config['sequences'][self.sequence_name]
-        start_index = 0
-        if self.resume_from_step:
+        for step_name in sequence:
             try:
-                start_index = sequence.index(self.resume_from_step)
-            except ValueError:
-                print(f"Resume step {self.resume_from_step} not found in sequence. Starting from beginning.")
-        for step in sequence[start_index:]:
-            try:
-                self.make_request(step)
+                self.make_request(step_name)
             except Exception as e:
-                print(f"Step {step} failed: {e}")
-                if not self.config['api_calls'][step].get("proceed_on_failure", False):
+                print(f"Step {step_name} failed: {e}")
+                step_config = self.config['api_calls'].get(step_name, {})
+                if not step_config.get("proceed_on_failure", False):
                     print("Halting execution due to failure.")
                     break
+        self.print_final_summary()
 
-        self.print_summary()
+    def print_and_log(self, message):
+        print(message)
+        # Optional: add logging to file if needed
 
-    def print_summary(self):
-        print("\n--- Step Summary ---")
-        for step, status in self.session_status.items():
-            color = Fore.GREEN if status == 'Success' else Fore.RED
-            print(f"{step}: {color}{status}{Style.RESET_ALL}")
+    def print_final_summary(self):
+        print(f"{Fore.YELLOW}Execution Completed{Style.RESET_ALL}")
+
+def list_scenarios_and_environments(config):
+    print(f"{Fore.YELLOW}Available Sequences:{Style.RESET_ALL}")
+    for seq in config.get('sequences', {}):
+        print(f" - {seq}")
+
+    print(f"\n{Fore.YELLOW}Available Environments:{Style.RESET_ALL}")
+    for env in config.get('environments', {}):
+        print(f" - {env}")
+
+def run_sequence(sequence, environment, verbosity):
+    runner = APIRunner(sequence, environment, verbosity)
+    runner.run()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--run', nargs=2, metavar=('SEQUENCE', 'ENV'))
-    parser.add_argument('--resume', metavar='CODE')
+    parser = argparse.ArgumentParser(description="Run API sequence from config", add_help=True)
+    parser.add_argument('-r', '--run', nargs=2, metavar=("SEQUENCE", "ENVIRONMENT"), help="Run a specific sequence with environment")
+    parser.add_argument('-v', '--verbose', action='count', default=0, help="Increase verbosity level (-v, -vv, -vvv)")
+    parser.add_argument('-l', '--list', action='store_true', help="List available sequences and environments")
     args = parser.parse_args()
 
-    if args.run:
-        sequence, env = args.run
-        runner = APIRunner(sequence, env, verbosity=0)
-    elif args.resume:
-        runner = APIRunner(None, None, verbosity=0, resume_code=args.resume)
-    else:
-        print("Usage: --run <SEQUENCE> <ENV> or --resume <CODE>")
-        sys.exit(1)
+    if args.list:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(base_dir, 'config.json')
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        list_scenarios_and_environments(config)
+        sys.exit(0)
 
-    runner.run()
+    if args.run:
+        sequence, environment = args.run
+        run_sequence(sequence, environment, args.verbose)
+    else:
+        print(f"{Fore.RED}Error: You must use --run followed by sequence and environment to execute API calls.{Style.RESET_ALL}")
+        sys.exit(1)
