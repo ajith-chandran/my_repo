@@ -1,18 +1,100 @@
-import java.io.*;
-import java.net.URL;
-import java.nio.file.*;
+@XmlRootElement(name = "LocationList")
+@XmlAccessorType(XmlAccessType.FIELD)
+public class LocationList {
 
-public class FileDownloader {
+    @XmlElement(name = "LocationDetail")
+    private List<LocationDetail> locationDetails;
 
-    public static Path downloadXml(String urlString, String localFileName) throws IOException {
-        URL url = new URL(urlString);
-        Path localPath = Paths.get("downloads", localFileName); // save under /downloads/
-        Files.createDirectories(localPath.getParent());
+    public List<LocationDetail> getLocationDetails() {
+        return locationDetails;
+    }
 
-        try (InputStream in = url.openStream()) {
-            Files.copy(in, localPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-
-        return localPath;
+    public void setLocationDetails(List<LocationDetail> locationDetails) {
+        this.locationDetails = locationDetails;
     }
 }
+
+
+@XmlAccessorType(XmlAccessType.FIELD)
+public class LocationDetail {
+
+    @XmlAttribute(name = "AirPort")
+    private boolean airPort;
+
+    @XmlAttribute(name = "Name")
+    private String name;
+
+    @XmlAttribute(name = "ExtendedLocationCode")
+    private String code;
+
+    @XmlElement(name = "Address")
+    private Address address;
+
+    @XmlElement(name = "Telephone")
+    private Telephone telephone;
+
+    @XmlElement(name = "AdditionalInfo")
+    private AdditionalInfo additionalInfo;
+
+    @XmlElement(name = "OperationSchedules")
+    private OperationSchedules operationSchedules;
+
+    // + getters/setters
+}
+
+
+@XmlAccessorType(XmlAccessType.FIELD)
+public class Address {
+    @XmlElement(name = "StreetNmbr")
+    private String streetNmbr;
+
+    @XmlElement(name = "CityName")
+    private String cityName;
+
+    @XmlElement(name = "PostalCode")
+    private String postalCode;
+
+    @XmlElement(name = "StateProv")
+    private String state;
+
+    @XmlElement(name = "CountryName")
+    private Country country;
+
+    // getters/setters
+}
+
+@XmlAccessorType(XmlAccessType.FIELD)
+public class Country {
+    @XmlAttribute(name = "Code")
+    private String code;
+
+    @XmlValue
+    private String name;
+}
+
+
+
+public class XmlParser {
+
+    public static List<LocationDetail> parseLocations(File xmlFile) throws JAXBException {
+        JAXBContext context = JAXBContext.newInstance(LocationList.class);
+        Unmarshaller unmarshaller = context.createUnmarshaller();
+        LocationList list = (LocationList) unmarshaller.unmarshal(xmlFile);
+        return list.getLocationDetails();
+    }
+}
+
+
+@Test
+void testExtractXml() throws Exception {
+    File xml = new File("path/to/yourfile.xml");
+    List<LocationDetail> locations = XmlParser.parseLocations(xml);
+    
+    for (LocationDetail location : locations) {
+        System.out.println("Name: " + location.getName() + ", Airport: " + location.isAirPort());
+    }
+}
+
+
+
+
