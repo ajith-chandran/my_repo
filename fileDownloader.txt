@@ -1,0 +1,18 @@
+import java.io.*;
+import java.net.URL;
+import java.nio.file.*;
+
+public class FileDownloader {
+
+    public static Path downloadXml(String urlString, String localFileName) throws IOException {
+        URL url = new URL(urlString);
+        Path localPath = Paths.get("downloads", localFileName); // save under /downloads/
+        Files.createDirectories(localPath.getParent());
+
+        try (InputStream in = url.openStream()) {
+            Files.copy(in, localPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        return localPath;
+    }
+}
