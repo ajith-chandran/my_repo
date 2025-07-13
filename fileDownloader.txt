@@ -96,5 +96,30 @@ void testExtractXml() throws Exception {
 }
 
 
-
+your-project/
+│
+├── src/
+│   ├── main/
+│   │   └── java/
+│   │       └── com/
+│   │           └── yourcompany/
+│   │               └── xmlparser/
+│   │                   ├── model/
+│   │                   │   ├── Address.java
+│   │                   │   ├── Country.java
+│   │                   │   ├── LocationDetail.java
+│   │                   │   ├── LocationList.java
+│   │                   │   ├── Telephone.java
+│   │                   │   └── (other nested elements...)
+│   │                   └── XmlParser.java
+│   │
+│   └── test/
+│       └── java/
+│           └── com/
+│               └── yourcompany/
+│                   └── xmlparser/
+│                       └── XmlParserTest.java
+│
+├── pom.xml / build.gradle
+└── (your XML file)
 
