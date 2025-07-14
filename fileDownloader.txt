@@ -1,125 +1,188 @@
-@XmlRootElement(name = "LocationList")
-@XmlAccessorType(XmlAccessType.FIELD)
-public class LocationList {
+src/main/java/com/example/comparator/model/
+    └── LocationDetail.java
+    └── DbRecord.java
+    └── CompositeKey.java
+src/main/java/com/example/comparator/util/
+    └── FeedToDbComparator.java
+src/test/java/com/example/comparator/
+    └── FeedToDbComparatorTest.java
 
-    @XmlElement(name = "LocationDetail")
-    private List<LocationDetail> locationDetails;
 
-    public List<LocationDetail> getLocationDetails() {
-        return locationDetails;
+
+package com.example.comparator.model;
+
+import java.util.Objects;
+
+public class CompositeKey {
+    private final String locationId;
+    private final String vendorId;
+
+    public CompositeKey(String locationId, String vendorId) {
+        this.locationId = locationId;
+        this.vendorId = vendorId;
     }
 
-    public void setLocationDetails(List<LocationDetail> locationDetails) {
-        this.locationDetails = locationDetails;
+    public String getLocationId() {
+        return locationId;
+    }
+
+    public String getVendorId() {
+        return vendorId;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof CompositeKey)) return false;
+        CompositeKey that = (CompositeKey) o;
+        return Objects.equals(locationId, that.locationId) &&
+               Objects.equals(vendorId, that.vendorId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(locationId, vendorId);
+    }
+
+    @Override
+    public String toString() {
+        return "(" + locationId + ", " + vendorId + ")";
     }
 }
 
 
-@XmlAccessorType(XmlAccessType.FIELD)
+
+
+package com.example.comparator.model;
+
 public class LocationDetail {
-
-    @XmlAttribute(name = "AirPort")
-    private boolean airPort;
-
-    @XmlAttribute(name = "Name")
+    private String locationId;
+    private String vendorId;
     private String name;
 
-    @XmlAttribute(name = "ExtendedLocationCode")
-    private String code;
+    // Getters and setters
+    public String getLocationId() { return locationId; }
+    public void setLocationId(String locationId) { this.locationId = locationId; }
 
-    @XmlElement(name = "Address")
-    private Address address;
+    public String getVendorId() { return vendorId; }
+    public void setVendorId(String vendorId) { this.vendorId = vendorId; }
 
-    @XmlElement(name = "Telephone")
-    private Telephone telephone;
-
-    @XmlElement(name = "AdditionalInfo")
-    private AdditionalInfo additionalInfo;
-
-    @XmlElement(name = "OperationSchedules")
-    private OperationSchedules operationSchedules;
-
-    // + getters/setters
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
 }
 
 
-@XmlAccessorType(XmlAccessType.FIELD)
-public class Address {
-    @XmlElement(name = "StreetNmbr")
-    private String streetNmbr;
 
-    @XmlElement(name = "CityName")
-    private String cityName;
 
-    @XmlElement(name = "PostalCode")
-    private String postalCode;
+package com.example.comparator.model;
 
-    @XmlElement(name = "StateProv")
-    private String state;
-
-    @XmlElement(name = "CountryName")
-    private Country country;
-
-    // getters/setters
-}
-
-@XmlAccessorType(XmlAccessType.FIELD)
-public class Country {
-    @XmlAttribute(name = "Code")
-    private String code;
-
-    @XmlValue
+public class DbRecord {
+    private String locationId;
+    private String vendorId;
     private String name;
+
+    // Getters and setters
+    public String getLocationId() { return locationId; }
+    public void setLocationId(String locationId) { this.locationId = locationId; }
+
+    public String getVendorId() { return vendorId; }
+    public void setVendorId(String vendorId) { this.vendorId = vendorId; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
 }
 
 
 
-public class XmlParser {
+package com.example.comparator.util;
 
-    public static List<LocationDetail> parseLocations(File xmlFile) throws JAXBException {
-        JAXBContext context = JAXBContext.newInstance(LocationList.class);
-        Unmarshaller unmarshaller = context.createUnmarshaller();
-        LocationList list = (LocationList) unmarshaller.unmarshal(xmlFile);
-        return list.getLocationDetails();
+import com.example.comparator.model.CompositeKey;
+import com.example.comparator.model.DbRecord;
+import com.example.comparator.model.LocationDetail;
+
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+public class FeedToDbComparator {
+
+    public static List<String> compare(List<LocationDetail> feedRecords, List<DbRecord> dbRecords) {
+        Map<CompositeKey, DbRecord> dbMap = dbRecords.stream()
+                .collect(Collectors.toMap(
+                        rec -> new CompositeKey(rec.getLocationId(), rec.getVendorId()),
+                        Function.identity()
+                ));
+
+        List<String> mismatches = new ArrayList<>();
+
+        for (LocationDetail feed : feedRecords) {
+            CompositeKey key = new CompositeKey(feed.getLocationId(), feed.getVendorId());
+            DbRecord db = dbMap.get(key);
+
+            if (db == null) {
+                mismatches.add("Missing in DB: " + key);
+            } else if (!Objects.equals(feed.getName(), db.getName())) {
+                mismatches.add("Mismatch at " + key + ": feed.name=" + feed.getName() + ", db.name=" + db.getName());
+            }
+        }
+
+        return mismatches;
     }
 }
 
 
-@Test
-void testExtractXml() throws Exception {
-    File xml = new File("path/to/yourfile.xml");
-    List<LocationDetail> locations = XmlParser.parseLocations(xml);
-    
-    for (LocationDetail location : locations) {
-        System.out.println("Name: " + location.getName() + ", Airport: " + location.isAirPort());
+
+package com.example.comparator;
+
+import com.example.comparator.model.DbRecord;
+import com.example.comparator.model.LocationDetail;
+import com.example.comparator.util.FeedToDbComparator;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+public class FeedToDbComparatorTest {
+
+    @Test
+    void testComparison() {
+        List<LocationDetail> feedRecords = List.of(
+            createFeed("LOC1", "V1", "Name A"),
+            createFeed("LOC2", "V1", "Name B"),
+            createFeed("LOC3", "V2", "Name C")
+        );
+
+        List<DbRecord> dbRecords = List.of(
+            createDb("LOC1", "V1", "Name A"),
+            createDb("LOC2", "V1", "Name X"),
+            createDb("LOC4", "V3", "Name D")
+        );
+
+        List<String> mismatches = FeedToDbComparator.compare(feedRecords, dbRecords);
+        mismatches.forEach(System.out::println);
+
+        assertTrue(mismatches.size() == 2);
+    }
+
+    private LocationDetail createFeed(String loc, String vendor, String name) {
+        LocationDetail l = new LocationDetail();
+        l.setLocationId(loc);
+        l.setVendorId(vendor);
+        l.setName(name);
+        return l;
+    }
+
+    private DbRecord createDb(String loc, String vendor, String name) {
+        DbRecord d = new DbRecord();
+        d.setLocationId(loc);
+        d.setVendorId(vendor);
+        d.setName(name);
+        return d;
     }
 }
 
 
-your-project/
-│
-├── src/
-│   ├── main/
-│   │   └── java/
-│   │       └── com/
-│   │           └── yourcompany/
-│   │               └── xmlparser/
-│   │                   ├── model/
-│   │                   │   ├── Address.java
-│   │                   │   ├── Country.java
-│   │                   │   ├── LocationDetail.java
-│   │                   │   ├── LocationList.java
-│   │                   │   ├── Telephone.java
-│   │                   │   └── (other nested elements...)
-│   │                   └── XmlParser.java
-│   │
-│   └── test/
-│       └── java/
-│           └── com/
-│               └── yourcompany/
-│                   └── xmlparser/
-│                       └── XmlParserTest.java
-│
-├── pom.xml / build.gradle
-└── (your XML file)
+
+
 
