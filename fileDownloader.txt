@@ -185,4 +185,41 @@ public class FeedToDbComparatorTest {
 
 
 
+package com.example.comparator.util;
+
+import com.example.comparator.model.DbRecord;
+import com.example.comparator.model.LocationDetail;
+
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+public class FeedToDbComparator {
+
+    public static List<String> compare(List<LocationDetail> feedRecords, List<DbRecord> dbRecords) {
+        // Use locationId as the key
+        Map<String, DbRecord> dbMap = dbRecords.stream()
+            .collect(Collectors.toMap(DbRecord::getLocationId, Function.identity()));
+
+        List<String> mismatches = new ArrayList<>();
+
+        for (LocationDetail feed : feedRecords) {
+            String locationId = feed.getLocationId();
+            DbRecord db = dbMap.get(locationId);
+
+            if (db == null) {
+                mismatches.add("Missing in DB: locationId=" + locationId);
+            } else {
+                if (!Objects.equals(feed.getName(), db.getName())) {
+                    mismatches.add("Mismatch at locationId=" + locationId +
+                        ": feed.name=" + feed.getName() + ", db.name=" + db.getName());
+                }
+                // compare more fields here
+            }
+        }
+
+        return mismatches;
+    }
+}
+
 
