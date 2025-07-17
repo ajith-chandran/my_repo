@@ -1,0 +1,6 @@
+ObjectMapper objectMapper = new ObjectMapper();
+
+ResponseType<Order> result = objectMapper.readValue(
+    new File("src/test/resources/mock-order-response.json"),
+    new TypeReference<ResponseType<Order>>() {}
+);
