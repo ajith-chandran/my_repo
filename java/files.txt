@@ -1,0 +1,29 @@
+/src/main/java/com/example/demo
+    ├── controller
+    │     ├── ProductController.java
+    │     ├── InventoryController.java
+    │     └── GraphQLController.java (if needed, otherwise use schema-first)
+    ├── graphql
+    │     └── schema.graphqls
+    ├── service
+    │     ├── ProductService.java
+    │     └── InventoryService.java
+    ├── repository
+    │     ├── ProductRepository.java
+    │     ├── InventoryRepository.java
+    │     └── WarehouseRepository.java
+    ├── entity
+    │     ├── Product.java
+    │     ├── Inventory.java
+    │     └── Warehouse.java
+    ├── dto
+    │     ├── ProductRequest.java
+    │     └── ProductResponse.java
+    ├── exception
+    │     ├── ResourceNotFoundException.java
+    │     ├── BadRequestException.java
+    │     └── GlobalExceptionHandler.java
+    ├── config
+    │     ├── RedisConfig.java
+    │     └── ResilienceConfig.java
+    └── DemoApplication.java
