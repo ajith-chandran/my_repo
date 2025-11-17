@@ -1,0 +1,27 @@
+type Query {
+    product(id: ID!): Product
+    inventories(productId: ID!): [Inventory]
+}
+
+type Mutation {
+    createProduct(name: String!, description: String, price: Float!): Product
+}
+
+type Product {
+    id: ID!
+    name: String
+    description: String
+    price: Float
+}
+
+type Inventory {
+    id: ID!
+    quantity: Int
+    warehouse: Warehouse
+}
+
+type Warehouse {
+    id: ID!
+    name: String
+    location: String
+}
