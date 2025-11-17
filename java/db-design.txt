@@ -1,0 +1,19 @@
+PRODUCT
+--------
+id (PK)
+name
+description
+price
+
+WAREHOUSE
+---------
+id (PK)
+name
+location
+
+INVENTORY
+---------
+id (PK)
+product_id (FK → PRODUCT.id)
+warehouse_id (FK → WAREHOUSE.id)
+quantity
